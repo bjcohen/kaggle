@@ -7,6 +7,7 @@ from gensim.models.ldamodel import LdaModel
 from sklearn.ensemble import RandomForestRegressor
 from sklearn.linear_model import SGDRegressor
 from sklearn.feature_extraction.text import CountVectorizer
+from sklearn.preprocessing import normalize
 import logging
 
 def import_data():
@@ -40,9 +41,8 @@ def generate_plain_features(data_train):
     cv = CountVectorizer(max_features=100)
 
     title_features = cv.fit_transform(data_train.Title.fillna(''))
-    location_features = cv.fit_transform(data_train.LocationNormalized)
 
-    return (title_features, location_features)
+    return title_features
 
 def construct_model_matrix(title_features, location_features, fd_docsums):
     fd_docsums_sparse = sp.sparse.coo_matrix(fd_docsums)
@@ -54,8 +54,12 @@ def train_model(model_matrix, data_train):
     # RidgeRegression SVR(linear)
     # SVR(rbf) EnsembleRegressors
     # SGD Regressor
-    sgdl = SGDRegressor()
-    sgdl.fit(model_matrix, data_train.SalaryNormalized)
+    X = normalize(model_matrix, axis=0)
+    Y = data_train.SalaryNormalized
+
+    sgdl = SGDRegressor(verbose=1)
+    sgdl.fit(X, Y)
+    predicted = sgdl.predict(X)
     
     classifier = RandomForestRegressor(n_estimators=50, verbose=2, n_jobs=-1, min_samples_split=30)
     classifier.fit(model_matrix, data_train.SalaryNormalized)
@@ -64,6 +68,6 @@ if __name__ == "__main__":
     logging.basicConfig(format='%(asctime)s : %(levelname)s : %(message)s', level=logging.INFO)
     (data_train, fd_corpus, title_corpus) = import_data()
     (fd_lda, fd_docsums, title_lda, title_docsums) = generate_lda_features(fd_corpus, title_corpus)
-    (title_features, location_features) = generate_plain_features(data_train)
+    title_features = generate_plain_features(data_train)
     model_matrix = construct_model_matrix(title_features, location_features, fd_docsums)
 
