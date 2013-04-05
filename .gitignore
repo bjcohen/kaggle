@@ -8,3 +8,6 @@
 *.dat
 *.pyc
 *.asv
+*.mexa64
+*.mexw32
+*.m~

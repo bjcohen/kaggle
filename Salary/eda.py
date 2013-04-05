@@ -39,10 +39,9 @@ def generate_lda_features(fd_corpus, title_corpus):
     
 def generate_plain_features(data_train):
     cv = CountVectorizer(max_features=100)
-
     title_features = cv.fit_transform(data_train.Title.fillna(''))
-
-    return title_features
+    location_features = 
+    return (title_features, location_features)
 
 def construct_model_matrix(title_features, location_features, fd_docsums):
     fd_docsums_sparse = sp.sparse.coo_matrix(fd_docsums)

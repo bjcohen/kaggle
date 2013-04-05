@@ -1,15 +1,15 @@
-function run_whale()
 %% import training data
+addpath('..');
 fid = fopen('../data/train.csv', 'r');
 data_train = textscan(fid, '%s %d', 'HeaderLines', 1, 'Delimiter', ',');
 fclose(fid);
 
 num_training_samples = 1000; % out of 30000
 ft_window = 256;
-ft_hop = 64;
+ft_hop = 32;
 
 ft_len = floor((4000 - ft_window) / ft_hop);
-images = zeros(num_training_samples, ft_len,1,ft_window/2);
+images = zeros(ft_len, ft_window/2, num_training_samples);
 for idata = 1:num_training_samples
     sample = double(aiffread(strcat('../data/train/', data_train{1}{idata}))) / 32767;
     tr = abs(stft(sample, ft_window, ft_hop));
@@ -20,12 +20,17 @@ for idata = 1:num_training_samples
         tr(:,ifreq) = tr(:,ifreq) ./ sqrt(mean(tr(:,ifreq).^2));
     end
     tr = reshape(tr, [ft_len 1 ft_window/2]);
-    images(idata,:,:,:) = tr;
+    images(:,:,idata) = tr;
 end
 
 %% generate params
 pars = struct();
-pars.basis_N = 1;
+pars.patch_M = 20;
+pars.patch_N = 20;
+pars.overlap_M = 10;
+pars.overlap_N = 10;
+pars.basis_M = 16;
+pars.basis_N = 16;
 pars = default_pars(pars);
 coef_pars = default_coef_pars(struct);
 
@@ -43,7 +48,7 @@ end
 %% generate train/test split
 [M, N, num_images] = size(images);
 num_horz = floor((M-pars.overlap_M)/(pars.patch_M-pars.overlap_M));
-num_vert = 1;
+num_vert = floor((N-pars.overlap_N)/(pars.patch_N-pars.overlap_N));
 total_patches = num_images*num_horz*num_vert;
 
 patch_set = randperm(total_patches);
@@ -51,6 +56,7 @@ train_patches = patch_set(pars.num_test+1:total_patches);
 num_train = total_patches-pars.num_test;
 test_patches = patch_set(1:pars.num_test);
 
+%% patches
 X_all = zeros(patch_M, patch_N, total_patches);
 for k=1:total_patches,
   m = patch_set(k);
@@ -70,6 +76,7 @@ for k=1:total_patches,
   X_all(:,:,k) = temp;
 end
 
+%%
 if pars.verbosity >= 1, fprintf('Using %d patches\n', total_patches); end;
 
 X_all = reshape(X_all, patch_M, patch_N, 1, total_patches);
