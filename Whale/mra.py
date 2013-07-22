@@ -2,11 +2,18 @@ from scikits.audiolab import Sndfile
 import numpy as np
 import scipy as sp
 import pandas as pd
-import pywt as wt
+import pywt
 
-train_data = pd.read_csv('data/train.csv', nrows=1000) # 30k total
 
-train_clips = []
-for _, data in train_data.iterrows():
-    train_clips.append(data['clip_name'])
+if __name__ == '__main__':
+    ntrain = 20000
+    nvalid = 10000
+    ntest = 54503
+    
+    data_train = pd.read_csv('data/train.csv', nrows=30000)
 
+    for i, fn, is_whale in data_train.itertuples():
+        s = Sndfile('data/train/' + fn, 'r')
+        ex = s.read_frames(s.nframes)
+        
+        s.close()

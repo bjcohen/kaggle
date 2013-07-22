@@ -32,22 +32,23 @@ def write_corpus(data, doc_visitor, vocab_visitor):
     skip = set(stopwords.words('english'))
     def proc_data(data):
         for (i, desc) in data:
+            if pd.isnull(desc): desc = 'none'
             desc = desc.translate(trans_mask).lower().split(' ')
-            ln = str(i)
+            ln_list = []
             for word, cnt in Counter(desc).iteritems():
                 word = word.strip()
                 word = stem(word)
                 if word in skip: continue
                 if word == '': continue
-                ln += " %i:%i" % (vocab[word], cnt)
-            yield ln + '\n'
+                ln_list.append("%i:%i" % (vocab[word], cnt))
+            yield str(len(ln_list)) + ' ' + ' '.join(ln_list) + '\n'
     doc_visitor(proc_data(data))
     vocab_visitor(intersperse(vocab.iterkeys(), '\n'))
     
 if __name__ == '__main__':
     # location_tree = pd.read_csv('Location_Tree.csv')
     data_train = pd.read_csv('Train.csv')
-    # data_valid = pd.read_csv('Valid.csv')
-    with open('documents.dat', 'w+') as doc, open('vocab.dat', 'w+') as vocab:
-        write_corpus(data_train['FullDescription'].iteritems(), doc.writelines, vocab.writelines)
-
+    with open('full_description', 'w+') as doc, open('full_description.vocab', 'w+') as vocab:
+       write_corpus(data_train.FullDescription.iteritems(), doc.writelines, vocab.writelines)
+    with open('titles', 'w+') as doc, open('titles.vocab', 'w+') as vocab:
+        write_corpus(data_train.Title.iteritems(), doc.writelines, vocab.writelines)
