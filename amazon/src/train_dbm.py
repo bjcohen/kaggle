@@ -3,6 +3,8 @@ import pandas as pd
 
 import theano
 import time
+import logging
+import os
 
 from sklearn.preprocessing import OneHotEncoder
 from theano import sparse, shared
@@ -21,21 +23,21 @@ def train_dbn(datasets, finetune_lr=0.1, pretraining_epochs=100,
 
     # numpy random generator
     numpy_rng = np.random.RandomState(123)
-    print '... building the model'
+    logging.info('... building the model')
     # construct the Deep Belief Network
     dbn = DBN(numpy_rng=numpy_rng, n_ins=16961,
               hidden_layers_sizes=[1000, 1000, 1000],
-              n_outs=1)
+              n_outs=2)
 
     #########################
     # PRETRAINING THE MODEL #
     #########################
-    print '... getting the pretraining functions'
+    logging.info('... getting the pretraining functions')
     pretraining_fns = dbn.pretraining_functions(train_set_x=train_set_x,
                                                 batch_size=batch_size,
                                                 k=k)
 
-    print '... pre-training the model'
+    logging.info('... pre-training the model')
     start_time = time.clock()
     ## Pre-train layer-wise
     for i in xrange(dbn.n_layers):
@@ -46,25 +48,25 @@ def train_dbn(datasets, finetune_lr=0.1, pretraining_epochs=100,
             for batch_index in xrange(n_train_batches):
                 c.append(pretraining_fns[i](index=batch_index,
                                             lr=pretrain_lr))
-            print 'Pre-training layer %i, epoch %d, cost ' % (i, epoch),
-            print np.mean(c)
+            logging.info('Pre-training layer %i, epoch %d, cost ' % (i, epoch))
+            logging.info(np.mean(c))
 
     end_time = time.clock()
-    print >> sys.stderr, ('The pretraining code for file ' +
-                          os.path.split(__file__)[1] +
-                          ' ran for %.2fm' % ((end_time - start_time) / 60.))
+    logging.warn('The pretraining code for file ' +
+                 os.path.split(__file__)[1] +
+                 ' ran for %.2fm' % ((end_time - start_time) / 60.))
 
     ########################
     # FINETUNING THE MODEL #
     ########################
 
     # get the training, validation and testing function for the model
-    print '... getting the finetuning functions'
-    train_fn, validate_model, test_model = dbn.build_finetune_functions(
+    logging.info('... getting the finetuning functions')
+    train_fn, _, _, validate_model, test_model = dbn.build_finetune_functions(
                 datasets=datasets, batch_size=batch_size,
                 learning_rate=finetune_lr)
 
-    print '... finetunning the model'
+    logging.info('... finetunning the model')
     # early-stopping parameters
     patience = 4 * n_train_batches  # look as this many examples regardless
     patience_increase = 2.    # wait this much longer when a new best is
@@ -96,7 +98,7 @@ def train_dbn(datasets, finetune_lr=0.1, pretraining_epochs=100,
 
                 validation_losses = validate_model()
                 this_validation_loss = np.mean(validation_losses)
-                print('epoch %i, minibatch %i/%i, validation error %f %%' % \
+                logging.info('epoch %i, minibatch %i/%i, validation error %f %%' % \
                       (epoch, minibatch_index + 1, n_train_batches,
                        this_validation_loss * 100.))
 
@@ -115,7 +117,7 @@ def train_dbn(datasets, finetune_lr=0.1, pretraining_epochs=100,
                     # test it on the test set
                     test_losses = test_model()
                     test_score = np.mean(test_losses)
-                    print(('     epoch %i, minibatch %i/%i, test error of '
+                    logging.info(('     epoch %i, minibatch %i/%i, test error of '
                            'best model %f %%') %
                           (epoch, minibatch_index + 1, n_train_batches,
                            test_score * 100.))
@@ -125,15 +127,18 @@ def train_dbn(datasets, finetune_lr=0.1, pretraining_epochs=100,
                 break
 
     end_time = time.clock()
-    print(('Optimization complete with best validation score of %f %%,'
+    logging.info(('Optimization complete with best validation score of %f %%,'
            'with test performance %f %%') %
                  (best_validation_loss * 100., test_score * 100.))
-    print >> sys.stderr, ('The fine tuning code for file ' +
-                          os.path.split(__file__)[1] +
-                          ' ran for %.2fm' % ((end_time - start_time)
-                                              / 60.))
+    logging.warn('The fine tuning code for file ' +
+                 os.path.split(__file__)[1] +
+                 ' ran for %.2fm' % ((end_time - start_time) / 60.))
 
+    return dbn
+    
 if __name__ == '__main__':
+    logging.basicConfig(level=0)
+    
     train_data = pd.read_csv('../data/train.csv')
     test_data = pd.read_csv('../data/test.csv', index_col='id')
 
@@ -146,16 +151,18 @@ if __name__ == '__main__':
     train_model_mat = train_model_mat.astype(theano.config.floatX)
     test_model_mat = test_model_mat.astype(theano.config.floatX)
     
-    n_train = 23000
-    n_valid = 4500
-
+    n_train = 22000                                  # 22000
+    n_valid = 5000                                   # 5000
+    n_test = 5769                                    # 5769
+    
     train_set_x = sparse.shared(train_model_mat[:n_train])
-    train_set_y = shared(train_data.ACTION[:n_train])
+    train_set_y = shared(train_data.ACTION[:n_train].astype('int32'))
     valid_set_x = sparse.shared(train_model_mat[n_train:n_train+n_valid])
-    valid_set_y = shared(train_data.ACTION[n_train:n_train+n_valid])
-    test_set_x  = sparse.shared(train_model_mat[n_train+n_valid:])
-    test_set_y  = shared(train_data.ACTION[n_train+n_valid:])
+    valid_set_y = shared(train_data.ACTION[n_train:n_train+n_valid].astype('int32'))
+    test_set_x  = sparse.shared(train_model_mat[n_train+n_valid:n_train+n_valid+n_test])
+    test_set_y  = shared(train_data.ACTION[n_train+n_valid:n_train+n_valid+n_test].astype('int32'))
     
     train_dbn([(train_set_x, train_set_y),
                (valid_set_x, valid_set_y),
-               (test_set_x, test_set_y)])
+               (test_set_x, test_set_y)],
+               batch_size = 10, pretraining_epochs = 1, training_epochs = 1)

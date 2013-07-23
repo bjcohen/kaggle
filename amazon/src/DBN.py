@@ -17,6 +17,7 @@ from logistic_sgd import LogisticRegression, load_data
 from mlp import HiddenLayer
 from rbm import RBM
 
+from sklearn.metrics import auc_score
 
 class DBN(object):
     """Deep Belief Network
@@ -137,7 +138,7 @@ class DBN(object):
         # symbolic variable that points to the number of errors made on the
         # minibatch given by self.x and self.y
         self.errors = self.logLayer.errors(self.y)
-
+        
     def pretraining_functions(self, train_set_x, batch_size, k):
         '''Generates a list of functions, for performing one step of
         gradient descent at a given layer. The function will require
@@ -227,25 +228,36 @@ class DBN(object):
         for param, gparam in zip(self.params, gparams):
             updates.append((param, param - gparam * learning_rate))
 
+        train_set_x_batch = sparse.dense_from_sparse(train_set_x[index * batch_size:
+                                                                 (index + 1) * batch_size])
+        test_set_x_batch = sparse.dense_from_sparse(test_set_x[index * batch_size:
+                                                               (index + 1) * batch_size])
+        valid_set_x_batch = sparse.dense_from_sparse(valid_set_x[index * batch_size:
+                                                                 (index + 1) * batch_size])
+                                                                 
+            
         train_fn = theano.function(inputs=[index],
               outputs=self.finetune_cost,
               updates=updates,
-              givens={self.x: train_set_x[index * batch_size:
-                                          (index + 1) * batch_size],
+              givens={self.x: train_set_x_batch,
                       self.y: train_set_y[index * batch_size:
                                           (index + 1) * batch_size]})
 
         test_score_i = theano.function([index], self.errors,
-                 givens={self.x: test_set_x[index * batch_size:
-                                            (index + 1) * batch_size],
+                 givens={self.x: test_set_x_batch,
                          self.y: test_set_y[index * batch_size:
                                             (index + 1) * batch_size]})
 
+        test_pred_proba_i = theano.function([index], self.logLayer.p_y_given_x,
+                 givens={self.x: test_set_x_batch})
+                                      
         valid_score_i = theano.function([index], self.errors,
-              givens={self.x: valid_set_x[index * batch_size:
-                                          (index + 1) * batch_size],
+              givens={self.x: valid_set_x_batch,
                       self.y: valid_set_y[index * batch_size:
                                           (index + 1) * batch_size]})
+
+        valid_pred_proba_i = theano.function([index], self.logLayer.p_y_given_x,
+              givens={self.x: valid_set_x_batch})
 
         # Create a function that scans the entire validation set
         def valid_score():
@@ -255,7 +267,23 @@ class DBN(object):
         def test_score():
             return [test_score_i(i) for i in xrange(n_test_batches)]
 
-        return train_fn, valid_score, test_score
+        def valid_auc():
+            probs = numpy.ravel([valid_pred_proba_i(i)[:,1] for i in xrange(n_valid_batches)])
+            if numpy.all(valid_set_y.get_value()) and numpy.all(probs):
+                return 1.
+            if numpy.all(valid_set_y.get_value() == 0) and numpy.all(probs == 0):
+                return 0.
+            return auc_score(valid_set_y.get_value(), probs)
+
+        def test_auc():
+            probs = numpy.ravel([test_pred_proba_i(i)[:,1] for i in xrange(n_test_batches)])
+            if numpy.all(test_set_y.get_value()) and numpy.all(probs):
+                return 1.
+            if numpy.all(test_set_y.get_value() == 0) and numpy.all(probs == 0):
+                return 0.
+            return auc_score(test_set_y.get_value(), probs)
+
+        return train_fn, valid_score, test_score, valid_auc, test_auc
 
 
 def test_DBN(finetune_lr=0.1, pretraining_epochs=100,
