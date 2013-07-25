@@ -26,7 +26,7 @@ def train_dbn(datasets, finetune_lr=0.1, pretraining_epochs=100,
     logging.info('... building the model')
     # construct the Deep Belief Network
     dbn = DBN(numpy_rng=numpy_rng, n_ins=16961,
-              hidden_layers_sizes=[1000, 1000, 1000],
+              hidden_layers_sizes=[2000, 2000, 2000],
               n_outs=2)
 
     #########################
@@ -62,13 +62,13 @@ def train_dbn(datasets, finetune_lr=0.1, pretraining_epochs=100,
 
     # get the training, validation and testing function for the model
     logging.info('... getting the finetuning functions')
-    train_fn, _, _, validate_model, test_model = dbn.build_finetune_functions(
+    train_fn, validate_model, test_model, validate_auc, test_auc = dbn.build_finetune_functions(
                 datasets=datasets, batch_size=batch_size,
                 learning_rate=finetune_lr)
 
     logging.info('... finetunning the model')
     # early-stopping parameters
-    patience = 4 * n_train_batches  # look as this many examples regardless
+    patience = 10 * n_train_batches  # look as this many examples regardless
     patience_increase = 2.    # wait this much longer when a new best is
                               # found
     improvement_threshold = 0.995  # a relative improvement of this much is
@@ -80,7 +80,7 @@ def train_dbn(datasets, finetune_lr=0.1, pretraining_epochs=100,
                                   # check every epoch
 
     best_params = None
-    best_validation_loss = np.inf
+    best_validation_auc = 0
     test_score = 0.
     start_time = time.clock()
 
@@ -98,38 +98,40 @@ def train_dbn(datasets, finetune_lr=0.1, pretraining_epochs=100,
 
                 validation_losses = validate_model()
                 this_validation_loss = np.mean(validation_losses)
-                logging.info('epoch %i, minibatch %i/%i, validation error %f %%' % \
+                validation_auc_score = validate_auc()
+                logging.info('epoch %i, minibatch %i/%i, validation error %f %%, validation auc %f %%' % \
                       (epoch, minibatch_index + 1, n_train_batches,
-                       this_validation_loss * 100.))
+                       this_validation_loss * 100., validation_auc_score * 100.))
 
                 # if we got the best validation score until now
-                if this_validation_loss < best_validation_loss:
+                if validation_auc_score > best_validation_auc:
 
                     #improve patience if loss improvement is good enough
-                    if (this_validation_loss < best_validation_loss *
+                    if (validation_auc_score > best_validation_auc /
                         improvement_threshold):
                         patience = max(patience, iter * patience_increase)
 
                     # save best validation score and iteration number
-                    best_validation_loss = this_validation_loss
+                    best_validation_auc = validation_auc_score
                     best_iter = iter
 
                     # test it on the test set
                     test_losses = test_model()
                     test_score = np.mean(test_losses)
+                    test_auc_score = test_auc()
                     logging.info(('     epoch %i, minibatch %i/%i, test error of '
-                           'best model %f %%') %
+                           'best model %f %%, auc of best model %f %%') %
                           (epoch, minibatch_index + 1, n_train_batches,
-                           test_score * 100.))
+                           test_score * 100., test_auc_score * 100.))
 
             if patience <= iter:
                 done_looping = True
                 break
 
     end_time = time.clock()
-    logging.info(('Optimization complete with best validation score of %f %%,'
-           'with test performance %f %%') %
-                 (best_validation_loss * 100., test_score * 100.))
+    logging.info(('Optimization complete with best validation auc score of %f %%,'
+           'with test auc %f %% (zero-one %f %%)') %
+                 (best_validation_auc * 100., test_auc_score * 100., test_score * 100.))
     logging.warn('The fine tuning code for file ' +
                  os.path.split(__file__)[1] +
                  ' ran for %.2fm' % ((end_time - start_time) / 60.))
@@ -151,10 +153,10 @@ if __name__ == '__main__':
     train_model_mat = train_model_mat.astype(theano.config.floatX)
     test_model_mat = test_model_mat.astype(theano.config.floatX)
     
-    n_train = 22000                                  # 22000
-    n_valid = 5000                                   # 5000
-    n_test = 5769                                    # 5769
-    
+    n_train = 22000
+    n_valid = 5000
+    n_test = 5769
+
     train_set_x = sparse.shared(train_model_mat[:n_train])
     train_set_y = shared(train_data.ACTION[:n_train].astype('int32'))
     valid_set_x = sparse.shared(train_model_mat[n_train:n_train+n_valid])
@@ -162,7 +164,13 @@ if __name__ == '__main__':
     test_set_x  = sparse.shared(train_model_mat[n_train+n_valid:n_train+n_valid+n_test])
     test_set_y  = shared(train_data.ACTION[n_train+n_valid:n_train+n_valid+n_test].astype('int32'))
     
-    train_dbn([(train_set_x, train_set_y),
-               (valid_set_x, valid_set_y),
-               (test_set_x, test_set_y)],
-               batch_size = 10, pretraining_epochs = 1, training_epochs = 1)
+    dbn = train_dbn([(train_set_x, train_set_y),
+                     (valid_set_x, valid_set_y),
+                     (test_set_x, test_set_y)],
+                     batch_size = 10, pretraining_epochs = 100, training_epochs = 1000)
+
+    pred_set_x = sparse.shared(test_model_mat)
+    
+    pred_proba, _ = dbn.build_prediction_functions(pred_set_x, batch_size = 100)
+
+    pred_set_y = pred_proba()[:,1]

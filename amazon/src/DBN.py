@@ -273,7 +273,7 @@ class DBN(object):
                 return 1.
             if numpy.all(valid_set_y.get_value() == 0) and numpy.all(probs == 0):
                 return 0.
-            return auc_score(valid_set_y.get_value(), probs)
+            return auc_score(valid_set_y.get_value()[:n_valid_batches*batch_size], probs)
 
         def test_auc():
             probs = numpy.ravel([test_pred_proba_i(i)[:,1] for i in xrange(n_test_batches)])
@@ -281,10 +281,31 @@ class DBN(object):
                 return 1.
             if numpy.all(test_set_y.get_value() == 0) and numpy.all(probs == 0):
                 return 0.
-            return auc_score(test_set_y.get_value(), probs)
+            return auc_score(test_set_y.get_value()[:n_test_batches*batch_size], probs)
 
         return train_fn, valid_score, test_score, valid_auc, test_auc
 
+    def build_prediction_functions(self, data_x, batch_size):
+        index = T.lscalar('index')
+        n_batches = data_x.get_value(borrow=True).shape[0] / batch_size
+            
+        data_x_batch = sparse.dense_from_sparse(data_x[index * batch_size:
+                                                       (index + 1) * batch_size])
+            
+        pred_proba_i = theano.function([index], self.logLayer.p_y_given_x,
+                                       givens = {self.x: data_x_batch})
+            
+        pred_i = theano.function([index], self.logLayer.y_pred,
+                                 givens = {self.x: data_x_batch})
+
+        def pred_proba():
+            return numpy.vstack([pred_proba_i(i) for i in xrange(n_batches)])
+
+        def pred():
+            return numpy.vstack([pred_i(i) for i in xrange(n_batches)])
+
+        return pred_proba, pred
+            
 
 def test_DBN(finetune_lr=0.1, pretraining_epochs=100,
              pretrain_lr=0.01, k=1, training_epochs=1000,
