@@ -157,12 +157,18 @@ if __name__ == '__main__':
     n_valid = 5000
     n_test = 5769
 
-    train_set_x = sparse.shared(train_model_mat[:n_train])
-    train_set_y = shared(train_data.ACTION[:n_train].astype('int32'))
-    valid_set_x = sparse.shared(train_model_mat[n_train:n_train+n_valid])
-    valid_set_y = shared(train_data.ACTION[n_train:n_train+n_valid].astype('int32'))
-    test_set_x  = sparse.shared(train_model_mat[n_train+n_valid:n_train+n_valid+n_test])
-    test_set_y  = shared(train_data.ACTION[n_train+n_valid:n_train+n_valid+n_test].astype('int32'))
+    train_i = np.zeros(n_train)
+    valid_i = np.zeros(n_valid) + 1
+    test_i = np.zeros(n_test) + 2
+
+    perm = np.random.permutation(np.hstack([train_i, valid_i, test_i]))
+
+    train_set_x = sparse.shared(train_model_mat[np.where(perm == 0)[0]])
+    train_set_y = shared(train_data.ACTION[perm == 0].astype('int32'))
+    valid_set_x = sparse.shared(train_model_mat[np.where(perm == 1)[0]])
+    valid_set_y = shared(train_data.ACTION[perm == 1].astype('int32'))
+    test_set_x  = sparse.shared(train_model_mat[np.where(perm == 2)[0]])
+    test_set_y  = shared(train_data.ACTION[perm == 2].astype('int32'))
     
     dbn = train_dbn([(train_set_x, train_set_y),
                      (valid_set_x, valid_set_y),
