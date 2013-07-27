@@ -2,7 +2,7 @@ import pandas as pd
 import numpy as np
 
 from sklearn.linear_model import SGDClassifier
-from sklearn.feature_selection import RFECV
+from sklearn.feature_selection import RFE
 from sklearn.feature_extraction import DictVectorizer
 from sklearn.metrics import auc_score
 from sklearn.preprocessing import OneHotEncoder
@@ -63,7 +63,15 @@ if __name__ == '__main__':
             
     ohe = OneHotEncoder()
     ohe.fit(np.vstack([train_data_nway, test_data_nway]))
-            
-    ## sgdc = SGDClassifier(loss='log')
-    ## rfecv = RFECV(sgdc, step=1000, loss_func=neg_auc_roc, loss_func_type='proba', verbose=2)
-    ## ward = Ward()
+
+    model_mat_train = ohe.transform(train_data_nway)
+
+    sgdc = SGDClassifier(loss='log', penalty='l1', n_iter=20, verbose=2)
+    rfe = RFE(sgdc, n_features_to_select=50000 ,step=.1)   #approx 2mm starting out
+
+    ACTION = np.array(train_data.ACTION)
+    
+    rfe.fit(model_mat_train, ACTION)
+
+    sgdc.fit(model_mat_train[:27000,rfe.support_], ACTION[:27000])
+    auc_score(train_data.ACTION[27000:], sgdc.predict_proba(model_mat_train[27000:,rfe.support_])[:,1])
