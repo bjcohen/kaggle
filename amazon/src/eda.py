@@ -1,7 +1,7 @@
 import pandas as pd
 import numpy as np
 
-from sklearn.linear_model import SGDClassifier
+from sklearn.linear_model import LogisticRegression
 from sklearn.feature_selection import RFE
 from sklearn.feature_extraction import DictVectorizer
 from sklearn.metrics import auc_score
@@ -66,12 +66,14 @@ if __name__ == '__main__':
 
     model_mat_train = ohe.transform(train_data_nway)
 
-    sgdc = SGDClassifier(loss='log', penalty='l1', n_iter=20, verbose=2)
-    rfe = RFE(sgdc, n_features_to_select=50000 ,step=.1)   #approx 2mm starting out
+    lr = LogisticRegression(penalty='l2', dual=True, C=1., fit_intercept=True,
+                            intercept_scaling=10., class_weight='auto')
+    rfe = RFE(lr, n_features_to_select=40000 ,step=.1)   #approx 2mm starting out
 
     ACTION = np.array(train_data.ACTION)
     
     rfe.fit(model_mat_train, ACTION)
 
-    sgdc.fit(model_mat_train[:27000,rfe.support_], ACTION[:27000])
-    auc_score(train_data.ACTION[27000:], sgdc.predict_proba(model_mat_train[27000:,rfe.support_])[:,1])
+    lr.fit(model_mat_train[:27000, np.where(rfe.support_)[0]], ACTION[:27000])
+    pred = lr.predict_proba(model_mat_train[27000:,np.where(rfe.support_)[0]])
+    auc_score(ACTION[27000:], pred[:,1])
