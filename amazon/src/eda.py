@@ -8,14 +8,14 @@ from sklearn.metrics import auc_score
 from sklearn.preprocessing import OneHotEncoder
 from sklearn.ensemble import RandomForestClassifier, GradientBoostingClassifier
 from sklearn.pipeline import Pipeline
-from sklearn.decomposition import RandomizedPCA
 from sklearn.cross_validation import cross_val_score
-from sklearn.cluster import Ward
 from sklearn.grid_search import GridSearchCV
 from sklearn.svm import SVC, NuSVC
 
 from operator import itemgetter
 from itertools import imap, combinations
+from subprocess import call
+import os
 
 def df_to_libsvm(df, target, filename, columns = None, colmap = None):
     if columns is None:
@@ -36,6 +36,12 @@ def df_to_libsvm(df, target, filename, columns = None, colmap = None):
             f.write('\n')
     return colmap
 
+def sparse_to_libsvm(data, target, filename):
+    with open(filename, 'w') as f:
+        for i in xrange(data.shape[0]):
+            s = [str(target[i])] + map(lambda x: str(x) + ':1', data[i].indices)
+            f.write(' '.join(s) + '\n')
+
 def write_grouping(df, target, filename = 'grouping.libfm'):
     with open(filename, 'w') as f:
         cols = list(df.columns)
@@ -43,6 +49,41 @@ def write_grouping(df, target, filename = 'grouping.libfm'):
             cols.remove(target)
         for i, col in enumerate(cols):
             for j in range(len(set(df[col]))): f.write('%d\n' % i)
+
+def run_fest_test(festpath='/Users/bjcohen/dev/fest', **kwargs):
+    '''
+    -c <int>  : committee type:
+                1 bagging
+                2 boosting (default)
+                3 random forest
+    -d <int>  : maximum depth of the trees (default: 1000)
+    -e        : report out of bag estimates (default: no)
+    -n <float>: relative weight for the negative class (default: 1)
+    -p <float>: parameter for random forests: (default: 1)
+                (ratio of features considered over sqrt(features))
+    -t <int>  : number of trees (default: 100)
+    '''
+    idstr = ''.join(map(lambda (f,v): f+str(v), kwargs.items()))
+    ret = call([os.path.join(festpath, 'festlearn'),
+                ' '.join(map(lambda (f,v): '-'+f+str(v), kwargs.items())),
+                '../data/train_3way_-27000.libsvm',
+                '../data/fest_%s_-27000.model' % idstr])
+    if ret != 0: raise Exception()
+    ret = call([os.path.join(festpath, 'festclassify'),
+                '../data/train_3way_-27000.libsvm',
+                '../data/fest_%s_-27000.model' % idstr,
+                '../data/pred_fest_train_-27000_%s' % idstr])
+    if ret != 0: raise Exception()
+    ret = call([os.path.join(festpath, 'festclassify'),
+                '../data/train_3way_27000-.libsvm',
+                '../data/fest_%s_-27000.model' % idstr,
+                '../data/pred_fest_train_27000-_%s' % idstr])
+    if ret != 0: raise Exception()
+    tr_score = auc_score(ACTION[:27000],
+                         pd.read_table('../data/pred_fest_train_-27000_%s' % idstr, header=None))
+    te_score = auc_score(ACTION[27000:],
+                         pd.read_table('../data/pred_fest_train_27000-_%s' % idstr, header=None))
+    return (tr_score, te_score)
 
 if __name__ == '__main__':
     train_data = pd.read_csv('../data/train.csv')
@@ -78,10 +119,10 @@ if __name__ == '__main__':
     ## logistic regression
     
     rfe.set_params(n_features_to_select=50000, step=.1)
-    rfe.fit(model_mat_train, ACTION)
+    rfe.fit(model_mat_train[:27000], ACTION[:27000])
 
-    lr = LogisticRegression(penalty='l2', dual=True, C=2.,
-                            intercept_scaling=50., class_weight='auto')
+    lr = LogisticRegression(penalty='l2', dual=True, C=10.,
+                            intercept_scaling=10., class_weight='auto')
     lr.fit(model_mat_train[:27000, np.where(rfe.support_)[0]], ACTION[:27000])
     pred = lr.predict_proba(model_mat_train[27000:,np.where(rfe.support_)[0]])
     auc_score(ACTION[27000:], pred[:,1])
