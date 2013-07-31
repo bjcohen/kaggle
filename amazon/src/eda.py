@@ -66,18 +66,18 @@ def run_fest_test(festpath='/Users/bjcohen/dev/fest', **kwargs):
     idstr = ''.join(map(lambda (f,v): f+str(v), kwargs.items()))
     ret = call([os.path.join(festpath, 'festlearn'),
                 ' '.join(map(lambda (f,v): '-'+f+str(v), kwargs.items())),
-                '../data/train_3way_-27000.libsvm',
-                '../data/fest_%s_-27000.model' % idstr])
+                os.path.join('..', 'data', 'train_3way_-27000.libsvm'),
+                os.path.join('..', 'data', 'fest_%s_-27000.model' % idstr)])
     if ret != 0: raise Exception()
     ret = call([os.path.join(festpath, 'festclassify'),
-                '../data/train_3way_-27000.libsvm',
-                '../data/fest_%s_-27000.model' % idstr,
-                '../data/pred_fest_train_-27000_%s' % idstr])
+                os.path.join('..', 'data', 'train_3way_-27000.libsvm'),
+                os.path.join('..', 'data', 'fest_%s_-27000.model' % idstr),
+                os.path.join('..', 'data', 'pred_fest_train_-27000_%s' % idstr)])
     if ret != 0: raise Exception()
     ret = call([os.path.join(festpath, 'festclassify'),
-                '../data/train_3way_27000-.libsvm',
-                '../data/fest_%s_-27000.model' % idstr,
-                '../data/pred_fest_train_27000-_%s' % idstr])
+                os.path.join('..', 'data', 'train_3way_27000-.libsvm'),
+                os.path.join('..', 'data', 'fest_%s_-27000.model' % idstr),
+                os.path.join('..', 'data', 'pred_fest_train_27000-_%s' % idstr)])
     if ret != 0: raise Exception()
     tr_score = auc_score(ACTION[:27000],
                          pd.read_table('../data/pred_fest_train_-27000_%s' % idstr, header=None))
@@ -89,6 +89,7 @@ if __name__ == '__main__':
     train_data = pd.read_csv('../data/train.csv')
     test_data = pd.read_csv('../data/test.csv', index_col='id')
 
+    # compute 2- and 3-way combinations of features
     train_data_nway = train_data.drop('ACTION', 1)
     test_data_nway = test_data.copy()
 
@@ -98,12 +99,19 @@ if __name__ == '__main__':
         if x not in nway_dict:
             nway_dict[x] = len(nway_dict)
         return nway_dict[x]
-    
+
     for nway in [2, 3]:
         for fs in combinations(test_data.columns, nway):
-            train_data_nway[','.join(fs)] = map(nway_lookup, [','.join(map(str, list(row))) for _, row in train_data[list(fs)].iterrows()])
-            test_data_nway[','.join(fs)] = map(nway_lookup, [','.join(map(str, list(row))) for _, row in test_data[list(fs)].iterrows()])
-            
+            train_data_nway['|'.join(fs)] = map(nway_lookup, [','.join(map(str, list(row))) for _, row in train_data[list(fs)].iterrows()])
+            test_data_nway['|'.join(fs)] = map(nway_lookup, [','.join(map(str, list(row))) for _, row in test_data[list(fs)].iterrows()])
+
+    # convert features from min(feature_code)..max(feature_code) to 0..num_feature_codes
+    n_train = train_data_nway.shape[0]
+    for col in train_data_nway.columns:
+        factvals, _ = pd.factorize(np.hstack([train_data_nway[col], test_data_nway[col]]))
+        train_data_nway[col], test_data_nway[col] = factvals[:n_train], factvals[n_train:]
+
+    # do one-hot encoding on features
     ohe = OneHotEncoder()
     ohe.fit(np.vstack([train_data_nway, test_data_nway]))
 
@@ -111,10 +119,17 @@ if __name__ == '__main__':
     model_mat_test = ohe.transform(test_data_nway)
     ACTION = np.array(train_data.ACTION)
 
+    # find column indices of features that are in both sets and subset model matrices
+    indices = np.concatenate([np.intersect1d(train_data_nway.ix[:,i], test_data_nway.ix[:,i]) + ohe.feature_indices_[i]
+                              for i in range(train_data_nway.shape[1])])
+    indices.sort()
+    model_mat_train = model_mat_train[:,indices]
+    model_mat_test = model_mat_test[:,indices]
+    
     ### model training
     
     rfe = RFE(LogisticRegression(penalty='l2', dual=True, C=1., fit_intercept=True, #approx 2mm starting out
-                                 intercept_scaling=10., class_weight='auto'))
+                                 intercept_scaling=10., class_weight='auto', verbose=1))
 
     ## logistic regression
     
@@ -127,9 +142,15 @@ if __name__ == '__main__':
     pred = lr.predict_proba(model_mat_train[27000:,np.where(rfe.support_)[0]])
     auc_score(ACTION[27000:], pred[:,1])
 
+    lr = LogisticRegression(penalty='l2', dual=True, C=10.,
+                            intercept_scaling=10., class_weight='auto')
+    lr.fit(model_mat_train[:27000], ACTION[:27000])
+    pred = lr.predict_proba(model_mat_train[27000:])
+    auc_score(ACTION[27000:], pred[:,1])
+    
     lr.fit(model_mat_train[:, np.where(rfe.support_)[0]], ACTION)
     pred = lr.predict_proba(model_mat_test[:,np.where(rfe.support_)[0]])
-    pd.DataFrame({'Id' : test_data.index, 'Action' : pred[:,1]}).to_csv('../lr_submission.csv', header=True, index=False)
+    pd.DataFrame({'Id' : test_data.index, 'Action' : pred[:,1]}).to_csv('../lr2_submission.csv', header=True, index=False)
 
     ## svms
     svc = SVC(C=1., kernel='rbf', probability=True, class_weight='auto', verbose=2)
@@ -137,10 +158,19 @@ if __name__ == '__main__':
     pred = svc.predict_proba(model_mat_train[27000:,np.where(rfe.support_)[0]])
     auc_score(ACTION[27000:], pred[:,1])
 
-    nusvc = NuSVC(nu=.5, kernel='rbf', probability=True, cache_size=1024, class_weight='auto', verbose=2)
+    nusvc = NuSVC(nu=.11, kernel='rbf', degree=3, probability=True, cache_size=1024, verbose=2)
     nusvc.fit(model_mat_train[:27000, np.where(rfe.support_)[0]], ACTION[:27000])
-    pred = nusvc.predict_proba(model_mat_train[27000:,np.where(rfe.support_)[0]])
-    auc_score(ACTION[27000:], pred[:,1])
+    svc_pred = nusvc.predict_proba(model_mat_train[27000:,np.where(rfe.support_)[0]])
+    auc_score(ACTION[27000:], svc_pred[:,1])
+
+    nusvc = NuSVC(nu=.11, kernel='rbf', degree=3, probability=True, cache_size=1024, verbose=2)
+    nusvc.fit(model_mat_train[:27000], ACTION[:27000])
+    svc_pred = nusvc.predict_proba(model_mat_train[27000:])
+    auc_score(ACTION[27000:], svc_pred[:,1])
+
+    nusvc.fit(model_mat_train[:, np.where(rfe.support_)[0]], ACTION)
+    svc_pred = nusvc.predict_proba(model_mat_test[:,np.where(rfe.support_)[0]])
+    pd.DataFrame({'Id' : test_data.index, 'Action' : svc_pred[:,1]}).to_csv('../nusvc_submission.csv', header=True, index=False)
 
     ## random forest
     
@@ -156,4 +186,21 @@ if __name__ == '__main__':
     gbc.fit(model_mat_train[:27000, np.where(rfe.support_)[0]].todense(), ACTION[:27000])
     pred = gbc.predict_proba(model_mat_train[27000:,np.where(rfe.support_)[0]].todense())
     auc_score(ACTION[27000:], pred[:,1])
+
+    ## nearest-neighbors
     
+    knn = KNeighborsClassifier(n_neighbors=20)
+    knn.fit(model_mat_train[:27000, np.where(rfe.support_)[0]], ACTION[:27000])
+    knn_pred = knn.predict_proba(model_mat_train[27000:,np.where(rfe.support_)[0]])
+    auc_score(ACTION[27000:], knn_pred[:,1])
+
+    ##
+
+    skb = SelectKBest(chi2, k=500000)
+    model_mat_train_reduced = skb.fit_transform(model_mat_train, ACTION)
+    model_mat_test_reduced = skb.transform(model_mat_test)
+
+    lr = LogisticRegression(penalty='l2', dual=True, C=10., intercept_scaling=10., class_weight='auto')
+    lr.fit(model_mat_train_reduced, ACTION)
+    pred = lr.predict_proba(model_mat_test_reduced)
+    pd.DataFrame({'Id' : test_data.index, 'Action' : pred[:,1]}).to_csv('../skb_lr_submission.csv', header=True, index=False)

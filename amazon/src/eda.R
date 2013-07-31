@@ -26,11 +26,11 @@ library(lme4)
 
 ###
 
-train.data.all = read.csv('train.csv')
-test.data.all = read.csv('test.csv')
+train.data.all = read.csv('../data/train.csv')
+test.data.all = read.csv('../data/test.csv')
 
 train.data.all[-1] = as.data.frame(lapply(train.data.all[-1], factor))
-test.data.all[-1] = as.data.frame(lapply(test.data[-1], factor))
+test.data.all[-1] = as.data.frame(lapply(test.data.all[-1], factor))
 
 ###
 
@@ -110,12 +110,10 @@ roc.area(test.data$ACTION, predict(rf.1, model.mat.test[,-1], type="prob")[,2])
 
 ### 
 
-glm.1 = glm(ACTION ~ RESOURCE, train.data, family = "binomial", subset = 1:27000)
-glmer.1 = glmer(ACTION ~ (1  | RESOURCE) + (1 | MGR_ID), train.data, family="binomial", subset=1:27000)
+glm.1 = glm(ACTION ~ RESOURCE + (ROLE_ROLLUP_1 + ROLE_ROLLUP_2 + ROLE_DEPTNAME) ^ 3 , train.data, family = "binomial", subset = 1:27000)
+glmer.1 = glmer(ACTION ~ RESOURCE + (1 | MGR_ID) + , train.data, family="binomial", subset=1:27000)
 
-glmer(ACTION ~ (MGR_ID + ROLE_ROLLUP_1 + ROLE_ROLLUP_2 + ROLE_DEPTNAME + ROLE_TITLE + ROLE_FAMILY_DESC + ROLE_FAMILY + ROLE_CODE | RESOURCE), train.data, family="binomial", subset=1:100)
-
-roc.area(as.numeric(as.character(train.data[27000:32769,]$ACTION)), predict(glmer.1, train.data[27000:32769,]))
+roc.area(as.numeric(as.character(train.data[27000:32769,]$ACTION)), predict(glm.1, train.data[27000:32769,]))
 
 ### 
 
