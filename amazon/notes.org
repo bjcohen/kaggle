@@ -1,0 +1,23 @@
+## overall mean: .942
+## ACTION(2)                 ACTION is 1 if the resource was approved, 0 if the resource was not
+## RESOURCE(7518)            An ID for each resource
+## MGR_ID(4243)              The EMPLOYEE ID of the manager of the current EMPLOYEE ID record; an employee may have only one manager at a time
+## ROLE_ROLLUP_1(128)        Company role grouping category id 1 (e.g. US Engineering)
+## ROLE_ROLLUP_2(177)        Company role grouping category id 2 (e.g. US Retail)
+## ROLE_DEPTNAME(449)        Company role department description (e.g. Retail)
+## ROLE_TITLE(343)           Company role business title description (e.g. Senior Engineering Retail Manager)
+## ROLE_FAMILY_DESC(2358)    Company role family extended description (e.g. Retail Manager, Software Engineering)
+## ROLE_FAMILY(67)           Company role family description (e.g. Retail Manager)
+## ROLE_CODE(343)            Company role code; this code is unique to each role (e.g. Manager)
+
+RESOURCE 4675: ct 839, all but 1 are 1
+RESOURCE 79092: ct 484, 96.6% 1
+RESOURCE 75078: 409, 99.0
+RESOURCE 25993: 409, 95.35
+RESOURCE 3853: 404, 98.51
+
+* good features
+  approval probability per resource
+  approval probability per manager
+
+TODO: clustering?
