@@ -4,6 +4,7 @@ import numpy as np
 import json
 import os
 import operator
+import datetime
 
 from sklearn.decomposition import PCA
 from sklearn.ensemble import RandomForestRegressor, RandomForestClassifier, GradientBoostingRegressor, GradientBoostingClassifier
@@ -16,6 +17,7 @@ from sklearn.naive_bayes import GaussianNB, MultinomialNB
 from sklearn.svm import SVC, SVR
 from sklearn.grid_search import GridSearchCV
 from sklearn.linear_model import SGDClassifier, SGDRegressor
+from sklearn.metrics import mean_squared_error
 
 def read_streaming_json(fn):    
     with open(fn) as f:
@@ -84,12 +86,14 @@ def preprocess(business_data, review_data, user_data, checkin_data):
 
     review_data['date'] = review_data['date'].map(lambda x: datetime.datetime.strptime(x, "%Y-%m-%d"))
 
-def train_model(model, train_data, cv=True):
-    (business_data, review_data, user_data, checkin_data) = train_data
+if __name__ == '__main__':
+    (business_data, review_data, user_data, checkin_data) = get_train_data()
 
     ## build model matrix
     r_pp = review_data[['stars', 'date', 'votes_useful', 'votes_funny', 'votes_cool', 'text']] \
-      .rename(columns={'votes_useful' : 'votes_useful_review', 'votes_funny' : 'votes_funny_review', 'votes_cool' : 'votes_cool_review'})
+      .rename(columns={'votes_useful' : 'votes_useful_review',
+                       'votes_funny' : 'votes_funny_review',
+                       'votes_cool' : 'votes_cool_review'})
     b_pp = business_data[['latitude', 'longitude', 'stars', 'review_count', 'open', 'categories', 'city']] # name, full_address, state
     u_pp = user_data[['review_count', 'average_stars', 'votes_useful', 'votes_funny', 'votes_cool']] # name
     c_pp = checkin_data[['checkin_info']]
@@ -107,14 +111,11 @@ def train_model(model, train_data, cv=True):
     model_mat['votes_cool_avg'] = model_mat['votes_cool'] / model_mat['review_count_user']
 
     ## cross-validation
-    if cv:
-        cv_result = cross_val_score(model, model_mat.drop('votes_useful', 1), model_mat['votes_useful'], cv=5, score_func=RMSLE)
-    else:
-        cv_result = None
+    cv_result = cross_val_score(model, model_mat.drop('stars', 1),
+                                model_mat['stars'], score_func=mean_squared_error)
 
     ## fit and return model
     scaler = StandardScaler()
     model_mat = scaler.fit_transform(model_mat)
-    model.fit(model_mat.drop('votes_useful', 1), model_mat['votes_useful'])
+    model.fit(model_mat.drop('stars', 1), model_mat['stars'])
 
-    return (model, scaler, model.score(model_mat.drop('votes_useful', 1), model_mat['votes_useful']), cv_result)
