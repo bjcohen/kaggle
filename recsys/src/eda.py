@@ -40,7 +40,7 @@ def get_train_data():
     business_data = read_streaming_json(os.path.join(train_directory, business_fn))
     business_data.set_index('business_id', inplace=True)
     review_data = read_streaming_json(os.path.join(train_directory, review_fn))
-    review_data.set_index(['business_id', 'user_id'], inplace=True)
+    review_data.set_index('review_id', inplace=True)
     user_data = read_streaming_json(os.path.join(train_directory, user_fn))
     user_data.set_index('user_id', inplace=True)
     checkin_data = read_streaming_json(os.path.join(train_directory, checkin_fn))
@@ -61,7 +61,6 @@ def get_test_data():
     business_data_test = read_streaming_json(os.path.join(test_directory, business_test_fn))
     business_data_test.set_index('business_id', inplace=True)
     review_data_test = read_streaming_json(os.path.join(test_directory, review_test_fn))
-    review_data_test.set_index(['business_id', 'user_id'], inplace=True)
     user_data_test = read_streaming_json(os.path.join(test_directory, user_test_fn))
     user_data_test.set_index('user_id', inplace=True)
     checkin_data_test = read_streaming_json(os.path.join(test_directory, checkin_test_fn))
@@ -84,38 +83,49 @@ def preprocess(business_data, review_data, user_data, checkin_data):
         del review_data['votes']
         del user_data['votes']
 
-    review_data['date'] = review_data['date'].map(lambda x: datetime.datetime.strptime(x, "%Y-%m-%d"))
+    if 'date' in review_data:
+        review_data['date'] = review_data['date'].map(lambda x: datetime.datetime.strptime(x, "%Y-%m-%d"))
+
+    del business_data['type']
+    del review_data['type']
+    del user_data['type']
+    del checkin_data['type']
 
 if __name__ == '__main__':
-    (business_data, review_data, user_data, checkin_data) = get_train_data()
+    (bus_data, review_data, user_data, checkin_data) = get_train_data()
+    (bus_data_test, review_data_test, user_data_test, checkin_data_test) = get_test_data()
 
-    ## build model matrix
-    r_pp = review_data[['stars', 'date', 'votes_useful', 'votes_funny', 'votes_cool', 'text']] \
-      .rename(columns={'votes_useful' : 'votes_useful_review',
+    # business: full_address, lat, lng, name, state
+    # user: name
+    model_mat = review_data[['business_id', 'user_id', 'stars', 'date', 'votes_useful', 'votes_funny', 'votes_cool', 'text']] \
+      .rename(columns={'stars' : 'stars_review',
+                       'votes_useful' : 'votes_useful_review',
                        'votes_funny' : 'votes_funny_review',
-                       'votes_cool' : 'votes_cool_review'})
-    b_pp = business_data[['latitude', 'longitude', 'stars', 'review_count', 'open', 'categories', 'city']] # name, full_address, state
-    u_pp = user_data[['review_count', 'average_stars', 'votes_useful', 'votes_funny', 'votes_cool']] # name
-    c_pp = checkin_data[['checkin_info']]
+                       'votes_cool' : 'votes_cool_review'}) \
+      .join(bus_data[['stars', 'review_count', 'open', 'categories', 'city']].rename(columns={'review_count' : 'review_count_bus'}), on='business_id') \
+      .join(user_data[['review_count', 'average_stars', 'votes_useful', 'votes_funny', 'votes_cool']], on='user_id') \
+      .join(checkin_data[['checkin_info']], on='business_id')
 
-    ## TODO: fix this for multiindex
-    model_mat = r_pp \
-      .merge(b_pp, left_index=True, right_index=True, how='left', suffixes=('_rev', '_bus')) \
-      .merge(u_pp, left_index=True, right_index=True, how='left', suffixes=('_bus', '_user')) \
-      .merge(c_pp, left_index=True, right_index=True, how='left')
+    # review: stars, date, votes, text
+    # businss: stars
+    # user: average_stars, votes
+    model_mat_test = review_data_test \
+      .join(bus_data_test[['review_count', 'open', 'categories', 'city']].rename(columns={'review_count' : 'review_count_bus'}), on='business_id') \
+      .join(user_data_test[['review_count']], on='user_id') \
+      .join(checkin_data_test[['checkin_info']], on='business_id')
       
-    model_mat['date'] = (datetime.datetime(2013, 1, 19) - model_mat['date']).map(operator.attrgetter("days"))
+    model_mat['date'] = datetime.datetime(2013, 1, 19) - model_mat['date']
 
-    model_mat['votes_useful_avg'] = model_mat['votes_useful'] / model_mat['review_count_user']
-    model_mat['votes_funny_avg'] = model_mat['votes_funny'] / model_mat['review_count_user']
-    model_mat['votes_cool_avg'] = model_mat['votes_cool'] / model_mat['review_count_user']
+    # model_mat['votes_useful_avg'] = model_mat['votes_useful'] / model_mat['review_count_user']
+    # model_mat['votes_funny_avg'] = model_mat['votes_funny'] / model_mat['review_count_user']
+    # model_mat['votes_cool_avg'] = model_mat['votes_cool'] / model_mat['review_count_user']
 
     ## cross-validation
-    cv_result = cross_val_score(model, model_mat.drop('stars', 1),
-                                model_mat['stars'], score_func=mean_squared_error)
+    # cv_result = cross_val_score(model, model_mat.drop('stars', 1),
+    #                             model_mat['stars'], score_func=mean_squared_error)
 
     ## fit and return model
-    scaler = StandardScaler()
-    model_mat = scaler.fit_transform(model_mat)
-    model.fit(model_mat.drop('stars', 1), model_mat['stars'])
+    # scaler = StandardScaler()
+    # model_mat = scaler.fit_transform(model_mat)
+    # model.fit(model_mat.drop('stars', 1), model_mat['stars'])
 
