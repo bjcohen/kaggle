@@ -2,3 +2,32 @@
   RMSE
   Top = ~1.20
   predict # of stars for each (user_id, business_id) pair
+* Key Points from Netflix Papers
+** 8/38/92 [fn:1]
+   30 neighbors kNN on residuals of non-regularized NSVD1 with k=200
+   50 neighbors kNN on 200-unit RBM
+   SimuFctr (40 factors), adaptive user factors by [MseSim] with <User-kNN on all global effects but the last 4>
+** 8/38/64 [fn:1]
+   30 neighbors kNN on residuals of non-regularized NSVD1 with k=200
+   50 neighbors kNN on 200-unit RBM
+   NNMF (128 factors), adaptive user factors by [MseSim]
+** Blending
+*** Bucket by support
+*** Separate OLS model per bucket
+*** Or, bucket randomly and average coefs
+** Asymmetric Factor Models
+** Regression
+** RBM-Gaussian
+** RBM
+** Matrix Factorization
+** kNN
+** Binarized Matrix Fact
+** Series trained on residuals
+** Similarity Scores
+*** EditSim [fn:1]
+* TODO
+** RBMs
+** Matrix Factorization or SVD++
+* Footnotes
+
+[fn:1] BellKorenVolinsky2008
