@@ -93,7 +93,7 @@ class KorenNgbr(BaseEstimator, RegressorMixin):
             offset = df.loc[:,'stars'] - R_user_bias
             R = df.shape[0] ** -0.5
             def f(bid):
-                return mu+b_user.get(uid, default=0)+b_item.loc[bid]+R*np.dot(offset, w_ij.loc[bid,R_items].todense())
+                return mu+b_user.get(uid, default=0)+b_item.loc[bid]+R*np.dot(offset, w_ij[bid].loc[R_items])
             return f
         self._preds = review_data.groupby('user_id').agg(pred_clos)
 
