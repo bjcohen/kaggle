@@ -6,6 +6,8 @@ import os
 import operator
 import datetime
 
+import ngbr
+
 from sklearn.decomposition import PCA
 from sklearn.ensemble import RandomForestRegressor, RandomForestClassifier, GradientBoostingRegressor, GradientBoostingClassifier
 from sklearn.cross_validation import cross_val_score
@@ -129,3 +131,6 @@ if __name__ == '__main__':
     # model_mat = scaler.fit_transform(model_mat)
     # model.fit(model_mat.drop('stars', 1), model_mat['stars'])
 
+    reload(ngbr)
+    kn = ngbr.KorenNgbr()
+    kn.fit((bus_data, review_data, user_data, checkin_data))

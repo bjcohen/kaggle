@@ -28,6 +28,7 @@
 * TODO
 ** RBMs
 ** Matrix Factorization or SVD++
+** Koren Integrated
 * Footnotes
 
 [fn:1] BellKorenVolinsky2008

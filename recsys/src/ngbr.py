@@ -5,6 +5,8 @@ from sklearn.base import BaseEstimator, RegressorMixin
 
 from collections import defaultdict
 
+import logging
+
 class KorenNgbr(BaseEstimator, RegressorMixin):
     '''Nearest-Neighbors algorithm from [Koren2008]
 
@@ -72,35 +74,44 @@ class KorenNgbr(BaseEstimator, RegressorMixin):
         self._b_user = pd.Series(0, index=user_data.index)
         self._b_item = pd.Series(0, index=bus_data.index)
         self._w_ij = pd.sparse.frame.SparseDataFrame(None, index=bus_data.index, columns=bus_data.index, default_fill_value=0)
+        self._mu = review_data['stars'].mean()
 
         l = self.lam
         g = self.gamma
-        mu = review_data['stars'].mean()
-        self._mu = mu
+        mu = self._mu
 
-        ## predictors for each user
+        b_user = self._b_user
+        b_item = self._b_item
+        w_ij = self._w_ij
+        
+        print 'generating user prediction functions'
+        
         def pred_clos(df):
-            offset = df['stars'] - (self._mu + self._b_user.ix[df['user_id']] + self._b_item.ix[df['business_id']])
-            weights = self._w_ij[:,df['user_id']]
+            uid = df.ix[0, 'user_id']
+            R_items = df.loc[:,'business_id']
+            R_user_bias = mu + b_user.get(uid, default=0) + b_item.loc[R_items]
+            offset = df.loc[:,'stars'] - R_user_bias
             R = df.shape[0] ** -0.5
             def f(bid):
-                return self._mu+self._b_user.ix[uid]+self._b_item.ix[bid]+R*np.dot(offset, weights[bid])
+                return mu+b_user.get(uid, default=0)+b_item.loc[bid]+R*np.dot(offset, w_ij.loc[bid,R_items].todense())
             return f
-        self._preds = review_data.groupby('user_id')[['business_id','stars']].agg(pred_clos)
+        self._preds = review_data.groupby('user_id').agg(pred_clos)
 
+        print 'starting training'
+        
+        ii = 1
         for _ in xrange(self.n_iter):
-            for i, (uid, bid) in review_data[['user_id', 'business_id']] \
-              .iterrows():
-                err = self._preds.ix[uid](bid)
-                self._b_user.ix[uid] += g * (err - l * self._b_user.ix[uid])
-                self._b_item.ix[bid] += g * (err - l * self._b_item.ix[bid])
+            for i, (uid, bid, stars) in review_data[['user_id', 'business_id', 'stars']].iterrows():
+                if ii % 100 == 0: print "on review %d" % ii
+                ii += 1
+                err = stars - self._preds.loc[uid, 0](bid)
+                self._b_user.loc[uid] += g * (err - l * self._b_user.loc[uid])
+                self._b_item.loc[bid] += g * (err - l * self._b_item.loc[bid])
                 R = review_data[['business_id', 'stars']][review_data['user_id']==uid]
                 for _, (bid2, rat) in R.iterrows():
-                    base_rat = mu + self._b_user.ix[uid] + self._b_item.ix[bid2]
+                    base_rat = mu + self._b_user.loc[uid] + self._b_item.loc[bid2]
                     self._w_ij[bid, bid2] += g * (R.shape[0] ** -0.5 * err * (rat - base_rat) - l * self._w_ij[bid, bid2])
         return self
-
-        
 
     def predict(self, X):
         '''
@@ -114,4 +125,4 @@ class KorenNgbr(BaseEstimator, RegressorMixin):
         -------
         y : vector of predicted ratings
         '''
-        return X.apply(lambda row: self._preds.ix[row['user_id']](row['business_id']), axis=1)
+        return X.apply(lambda row: self._preds.loc[row['user_id']](row['business_id']), axis=1)
