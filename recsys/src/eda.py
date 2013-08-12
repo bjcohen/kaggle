@@ -134,3 +134,7 @@ if __name__ == '__main__':
     reload(ngbr)
     kn = ngbr.KorenNgbr()
     kn.fit((bus_data, review_data, user_data, checkin_data))
+
+    reload(ngbr)
+    ki = ngbr.KorenIntegrated()
+    ki.fit((bus_data, review_data, user_data, checkin_data))
