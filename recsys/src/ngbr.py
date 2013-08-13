@@ -4,8 +4,6 @@ import scipy as sp
 
 from sklearn.base import BaseEstimator, RegressorMixin
 
-from collections import defaultdict
-
 import logging
 import time
 
@@ -178,9 +176,9 @@ class KorenIntegrated(BaseEstimator, RegressorMixin):
 
     `q_` : matrix of item factors
 
-    `y_` : implicit user factors (not used)
+    `y_` : implicit user factors
 
-    `c_` : matrix of implicit item effects (not used)
+    `c_` : matrix of implicit item effects
 
     Notes
     -----
@@ -222,7 +220,7 @@ class KorenIntegrated(BaseEstimator, RegressorMixin):
 
         Parameters
         ----------
-        X : array of business_data, review_data, user_data, checkin_data
+        X : array of business_data, review_data, review_data_implicit, user_data, checkin_data
 
         y : not used
 
@@ -230,59 +228,56 @@ class KorenIntegrated(BaseEstimator, RegressorMixin):
         -------
         self : instance of self
         '''
-        (bus_data, review_data, user_data, checkin_data) = X
+        (bus_data, review_data, review_data_implicit, user_data, checkin_data) = X
 
-        all_user_index = user_data.index.union(review_data['user_id']).unique()
+        all_user_index = user_data.index \
+          .union(pd.Index(review_data['user_id'].unique())) \
+          .union(pd.Index(review_data_implicit['user_id'].unique())) \
+          .unique()
         self.b_user_ = pd.Series(0, index=all_user_index)
         self.b_item_ = pd.Series(0, index=bus_data.index)
         self._w_ij_index = bus_data.index
         self.w_ij_ = sp.sparse.lil_matrix((bus_data.shape[0], bus_data.shape[0]))
+        self.c_ = sp.sparse.lil_matrix((bus_data.shape[0], bus_data.shape[0]))
         self.p_ = pd.DataFrame(0, index=all_user_index, columns=range(self.n_factors))
         self.q_ = pd.DataFrame(0, index=bus_data.index, columns=range(self.n_factors))
+        self.y_ = pd.DataFrame(0, index=bus_data.index, columns=range(self.n_factors))
         self.mu_ = review_data['stars'].mean()
 
-        t1 = time.clock()
-        print 'generating user prediction functions'
+        self._review_data = review_data
+        self._review_data_implicit = review_data_implicit
+        self._review_map = review_data.groupby('user_id').groups
+        self._review_implicit_map = review_data_implicit.groupby('user_id').groups
 
-        def pred_clos(df):
-            uid = df.ix[0, 'user_id']
-            R_items = df.loc[:,'business_id']
-            R_user_bias = self.mu_ + np.add(self.b_user_.get(uid, default=0), self.b_item_.loc[R_items])
-            offset = np.subtract(df.loc[:,'stars'], R_user_bias)
-            R = df.shape[0] ** -0.5
-            def f(bid):
-                xi = self._w_ij_index.get_loc(bid)
-                yi = self._w_ij_index.reindex(R_items)[1]
-                general = self.mu_+self.b_user_.get(uid, default=0)+self.b_item_.loc[bid]
-                latent = np.dot(self.p_.loc[uid,:], self.q_.loc[bid,:])
-                neighborhood = R*self.w_ij_[xi,yi].dot(offset)
-                return general + latent + neighborhood   # "3-tier"
-            return f
-        self._preds = review_data.groupby('user_id').agg(pred_clos)
-
-        t2 = time.clock()
-        print 'finished precomputation in %dm' % ((t2 - t1) / 60.)
         print 'starting training'
+        t2 = time.clock()
 
-        R = review_data.groupby('user_id').groups
         ii = 1
         for _ in xrange(self.n_iter):
             for i, (uid, bid, stars) in review_data[['user_id', 'business_id', 'stars']].iterrows():
                 if ii % 1000 == 0: print "on review %d" % ii
                 ii += 1
-                err = stars - self._preds.loc[uid, 0](bid)
+                err = stars - self._pred(uid, bid)
+                invroot_R_mag = len(self._review_map[uid]) ** -0.5
+                invroot_N_mag = len(self._review_implicit_map[uid]) ** -0.5
                 ## general
                 self.b_user_.loc[uid] += self.gam1 * (err - self.lam6 * self.b_user_.loc[uid])
                 self.b_item_.loc[bid] += self.gam1 * (err - self.lam6 * self.b_item_.loc[bid])
                 ## latent
-                self.q_.loc[bid,:] += self.gam2 * (err * self.p_.loc[uid,:] - self.lam7 * self.q_.loc[bid,:])
+                N_items = self._review_data_implicit.loc[self._review_implicit_map[uid],'business_id']
+                self.q_.loc[bid,:] += self.gam2 * (err * (self.p_.loc[uid,:] +
+                                                          invroot_N_mag * self.y_.loc[N_items].sum(axis=0))
+                                                   - self.lam7 * self.q_.loc[bid,:])
                 self.p_.loc[uid,:] += self.gam2 * (err * self.q_.loc[bid,:] - self.lam7 * self.p_.loc[uid,:])
+                self.y_.loc[bid,:] += self.gam2 * (err * invroot_N_mag * self.q_.loc[bid,:] - self.lam7 * self.y_.loc[bid,:])
                 ## neighborhood
                 xi = self._w_ij_index.get_loc(bid)
-                yi = self._w_ij_index.reindex(review_data.ix[R[uid],'business_id'])[1]
-                base_rat = self.mu_ + self.b_user_.loc[uid] + self.b_item_.loc[review_data.ix[R[uid],'business_id']]
-                self.w_ij_[xi,yi] = self.w_ij_[xi,yi] + self.gam3 * np.subtract(len(R[uid]) ** -0.5 * err * \
-                    np.subtract(review_data.ix[R[uid],'stars'], base_rat), self.lam8 * self.w_ij_[xi,yi].todense())
+                w_yi = self._w_ij_index.reindex(review_data.loc[self._review_map[uid],'business_id'])[1]
+                c_yi = self._w_ij_index.reindex(review_data_implicit.loc[self._review_implicit_map[uid],'business_id'])[1]
+                base_rat = self.mu_ + self.b_user_.loc[uid] + self.b_item_.loc[review_data.loc[self._review_map[uid],'business_id']]
+                self.w_ij_[xi,w_yi] = self.w_ij_[xi,w_yi] + self.gam3 * np.subtract(invroot_R_mag * err * \
+                    np.subtract(review_data.loc[self._review_map[uid],'stars'], base_rat), self.lam8 * self.w_ij_[xi,w_yi].todense())
+                self.c_[xi,c_yi] = self.c_[xi,c_yi] + self.gam3 * np.subtract(invroot_N_mag * err, self.lam8 * self.c_[xi,c_yi].todense())
 
         t3 = time.clock()
         print 'finished training in %dm' % ((t3 - t2) / 60.)
@@ -295,11 +290,62 @@ class KorenIntegrated(BaseEstimator, RegressorMixin):
 
         Parameters
         ----------
-        X : array of business_data, review_data, user_data, checkin_data
+        X : review_data format dataframe
 
         Returns
         -------
         y : vector of predicted ratings
         '''
-        return X[1].apply(lambda row: self._preds.ix[row['user_id'],0](row['business_id']), axis=1)
+        return X.apply(lambda row: self._pred(row['user_id'], row['business_id']), axis=1)
 
+    def _pred(self, uid, bid):
+        '''
+        Make prediction from fitted model.
+
+        Parameters
+        ----------
+        uid : `user_id`
+
+        bid : `business_id`
+
+        Returns
+        -------
+        y : predicted rating
+        '''
+        if uid in self._review_map:
+            review_data_user = self._review_data.loc[self._review_map[uid]]
+            review_data_implicit_user = self._review_data_implicit.loc[self._review_implicit_map[uid]]
+            
+            R_items = review_data_user.loc[:,'business_id']
+            N_items = review_data_implicit_user.loc[:,'business_id']
+            
+            b_u = self.mu_ + np.add(self.b_user_.loc[uid], self.b_item_.loc[R_items])
+            
+            invroot_R_mag = review_data_user.shape[0] ** -0.5
+            invroot_N_mag = review_data_implicit_user.shape[0] ** -0.5
+            
+            xi = self._w_ij_index.get_loc(bid)
+            w_yi = self._w_ij_index.reindex(R_items)[1]
+            c_yi = self._w_ij_index.reindex(N_items)[1]
+            
+            general = self.mu_+self.b_user_.loc[uid]+self.b_item_.loc[bid]
+            latent = np.dot(self.q_.loc[bid,:], np.add(self.p_.loc[uid,:], invroot_N_mag * self.y_.loc[N_items].sum(axis=0)))
+            neighborhood = invroot_R_mag*self.w_ij_[xi,w_yi].dot(np.subtract(review_data_user.loc[:,'stars'], b_u))
+            neighborhood_implicit = invroot_N_mag * self.w_ij_[xi,c_yi].sum()
+            
+            return general + latent + neighborhood + neighborhood_implicit
+        else:
+            review_data_implicit_user = self._review_data_implicit.loc[self._review_implicit_map[uid]]
+            
+            N_items = review_data_implicit_user.loc[:,'business_id']
+            
+            invroot_N_mag = review_data_implicit_user.shape[0] ** -0.5
+            
+            xi = self._w_ij_index.get_loc(bid)
+            c_yi = self._w_ij_index.reindex(N_items)[1]
+            
+            general = self.mu_+self.b_item_.loc[bid]
+            latent = np.dot(self.q_.loc[bid,:], np.add(self.p_.loc[uid,:], invroot_N_mag * self.y_.loc[N_items].sum(axis=0)))
+            neighborhood_implicit = invroot_N_mag * self.w_ij_[xi,c_yi].sum()
+            
+            return general + latent + neighborhood_implicit

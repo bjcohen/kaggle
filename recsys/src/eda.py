@@ -99,24 +99,24 @@ if __name__ == '__main__':
 
     # business: full_address, lat, lng, name, state
     # user: name
-    model_mat = review_data[['business_id', 'user_id', 'stars', 'date', 'votes_useful', 'votes_funny', 'votes_cool', 'text']] \
-      .rename(columns={'stars' : 'stars_review',
-                       'votes_useful' : 'votes_useful_review',
-                       'votes_funny' : 'votes_funny_review',
-                       'votes_cool' : 'votes_cool_review'}) \
-      .join(bus_data[['stars', 'review_count', 'open', 'categories', 'city']].rename(columns={'review_count' : 'review_count_bus'}), on='business_id') \
-      .join(user_data[['review_count', 'average_stars', 'votes_useful', 'votes_funny', 'votes_cool']], on='user_id') \
-      .join(checkin_data[['checkin_info']], on='business_id')
+    # model_mat = review_data[['business_id', 'user_id', 'stars', 'date', 'votes_useful', 'votes_funny', 'votes_cool', 'text']] \
+    #   .rename(columns={'stars' : 'stars_review',
+    #                    'votes_useful' : 'votes_useful_review',
+    #                    'votes_funny' : 'votes_funny_review',
+    #                    'votes_cool' : 'votes_cool_review'}) \
+    #   .join(bus_data[['stars', 'review_count', 'open', 'categories', 'city']].rename(columns={'review_count' : 'review_count_bus'}), on='business_id') \
+    #   .join(user_data[['review_count', 'average_stars', 'votes_useful', 'votes_funny', 'votes_cool']], on='user_id') \
+    #   .join(checkin_data[['checkin_info']], on='business_id')
 
     # review: stars, date, votes, text
     # businss: stars
     # user: average_stars, votes
-    model_mat_test = review_data_test \
-      .join(bus_data_test[['review_count', 'open', 'categories', 'city']].rename(columns={'review_count' : 'review_count_bus'}), on='business_id') \
-      .join(user_data_test[['review_count']], on='user_id') \
-      .join(checkin_data_test[['checkin_info']], on='business_id')
+    # model_mat_test = review_data_test \
+    #   .join(bus_data_test[['review_count', 'open', 'categories', 'city']].rename(columns={'review_count' : 'review_count_bus'}), on='business_id') \
+    #   .join(user_data_test[['review_count']], on='user_id') \
+    #   .join(checkin_data_test[['checkin_info']], on='business_id')
       
-    model_mat['date'] = datetime.datetime(2013, 1, 19) - model_mat['date']
+    # model_mat['date'] = datetime.datetime(2013, 1, 19) - model_mat['date']
 
     # model_mat['votes_useful_avg'] = model_mat['votes_useful'] / model_mat['review_count_user']
     # model_mat['votes_funny_avg'] = model_mat['votes_funny'] / model_mat['review_count_user']
@@ -131,13 +131,13 @@ if __name__ == '__main__':
     # model_mat = scaler.fit_transform(model_mat)
     # model.fit(model_mat.drop('stars', 1), model_mat['stars'])
 
-    reload(ngbr)
-    kn = ngbr.KorenNgbr()
-    kn.fit((pd.concat([bus_data, bus_data_test]), review_data, pd.concat([user_data, user_data_test]),
-            pd.concat([checkin_data, checkin_data_test])))
+    # reload(ngbr)
+    # kn = ngbr.KorenNgbr()
+    # kn.fit((pd.concat([bus_data, bus_data_test]), review_data, pd.concat([user_data, user_data_test]),
+    #         pd.concat([checkin_data, checkin_data_test])))
 
     reload(ngbr)
-    ki = ngbr.KorenIntegrated(n_iter=10)
-    ki.fit((pd.concat([bus_data, bus_data_test]), review_data.iloc[:180000], pd.concat([user_data, user_data_test]),
+    ki = ngbr.KorenIntegrated(n_iter=1)
+    ki.fit((pd.concat([bus_data, bus_data_test]), review_data.iloc[:1000], review_data.iloc[:2000], pd.concat([user_data, user_data_test]),
             pd.concat([checkin_data, checkin_data_test])))
-    ki_pred = ki.predict(review_data.iloc[180000:])
+    ki_pred = ki.predict(review_data.iloc[1000:2000])
