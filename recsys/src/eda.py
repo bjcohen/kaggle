@@ -133,8 +133,11 @@ if __name__ == '__main__':
 
     reload(ngbr)
     kn = ngbr.KorenNgbr()
-    kn.fit((bus_data, review_data, user_data, checkin_data))
+    kn.fit((pd.concat([bus_data, bus_data_test]), review_data, pd.concat([user_data, user_data_test]),
+            pd.concat([checkin_data, checkin_data_test])))
 
     reload(ngbr)
-    ki = ngbr.KorenIntegrated()
-    ki.fit((bus_data, review_data, user_data, checkin_data))
+    ki = ngbr.KorenIntegrated(n_iter=10)
+    ki.fit((pd.concat([bus_data, bus_data_test]), review_data.iloc[:180000], pd.concat([user_data, user_data_test]),
+            pd.concat([checkin_data, checkin_data_test])))
+    ki_pred = ki.predict(review_data.iloc[180000:])

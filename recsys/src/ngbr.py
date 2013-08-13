@@ -34,6 +34,8 @@ class KorenNgbr(BaseEstimator, RegressorMixin):
 
     `w_ij_` : matrix of offset weights
 
+    `c_` : matrix of implicit item effects (not used)
+
     Notes
     -----
     See Factorization Meets the Neighborhood: a Multifaceted
@@ -56,6 +58,7 @@ class KorenNgbr(BaseEstimator, RegressorMixin):
         self.b_user_ = None               # user bias
         self.b_item_ = None               # item bias
         self.w_ij_ = None                 # baseline offsets
+        self.c_ = None
 
     def fit(self, X, y=None):
         '''
@@ -89,13 +92,13 @@ class KorenNgbr(BaseEstimator, RegressorMixin):
         def pred_clos(df):
             uid = df.ix[0, 'user_id']
             R_items = df.loc[:,'business_id']
-            R_user_bias = mu + np.add(self.b_user_[uid], self.b_item_.loc[R_items])
+            R_user_bias = mu + np.add(self.b_user_.get(uid, default=0), self.b_item_.loc[R_items])
             offset = np.subtract(df.loc[:,'stars'], R_user_bias)
             R = df.shape[0] ** -0.5
             def f(bid):
                 xi = self._w_ij_index.get_loc(bid)
                 yi = self._w_ij_index.reindex(R_items)[1]
-                return mu+self.b_user_[uid]+self.b_item_.loc[bid]+R*self.w_ij_[xi,yi].dot(offset)
+                return mu+self.b_user_.get(uid, default=0)+self.b_item_.loc[bid]+R*self.w_ij_[xi,yi].dot(offset)
             return f
         self._preds = review_data.groupby('user_id').agg(pred_clos)
 
@@ -177,6 +180,8 @@ class KorenIntegrated(BaseEstimator, RegressorMixin):
 
     `y_` : implicit user factors (not used)
 
+    `c_` : matrix of implicit item effects (not used)
+
     Notes
     -----
     See Factorization Meets the Neighborhood: a Multifaceted
@@ -209,6 +214,7 @@ class KorenIntegrated(BaseEstimator, RegressorMixin):
         self.p_ = None
         self.q_ = None
         self.y_ = None
+        self.c_ = None
 
     def fit(self, X, y=None):
         '''
@@ -238,30 +244,16 @@ class KorenIntegrated(BaseEstimator, RegressorMixin):
         t1 = time.clock()
         print 'generating user prediction functions'
 
-        # for _, df in review_data.groupby('user_id'):
-        #     uid = df.ix[0, 'user_id']
-        #     R_items = df.loc[:,'business_id']
-        #     R_user_bias = self.mu_ + np.add(self.b_user_[uid], self.b_item_.loc[R_items])
-        #     offset = np.subtract(df.loc[:,'stars'], R_user_bias)
-        #     R = df.shape[0] ** -0.5
-        #     def f(bid):
-        #         xi = self._w_ij_index.get_loc(bid)
-        #         yi = self._w_ij_index.reindex(R_items)[1]
-        #         general = self.mu_+self.b_user_[uid]+self.b_item_.loc[bid]
-        #         latent = np.dot(self.p_.loc[uid,:], self.q_.loc[bid,:])
-        #         neighborhood = R*self.w_ij_[xi,yi].dot(offset)
-        #         return general + latent + neighborhood   # "3-tier"
-        
         def pred_clos(df):
             uid = df.ix[0, 'user_id']
             R_items = df.loc[:,'business_id']
-            R_user_bias = self.mu_ + np.add(self.b_user_[uid], self.b_item_.loc[R_items])
+            R_user_bias = self.mu_ + np.add(self.b_user_.get(uid, default=0), self.b_item_.loc[R_items])
             offset = np.subtract(df.loc[:,'stars'], R_user_bias)
             R = df.shape[0] ** -0.5
             def f(bid):
                 xi = self._w_ij_index.get_loc(bid)
                 yi = self._w_ij_index.reindex(R_items)[1]
-                general = self.mu_+self.b_user_[uid]+self.b_item_.loc[bid]
+                general = self.mu_+self.b_user_.get(uid, default=0)+self.b_item_.loc[bid]
                 latent = np.dot(self.p_.loc[uid,:], self.q_.loc[bid,:])
                 neighborhood = R*self.w_ij_[xi,yi].dot(offset)
                 return general + latent + neighborhood   # "3-tier"
@@ -309,5 +301,5 @@ class KorenIntegrated(BaseEstimator, RegressorMixin):
         -------
         y : vector of predicted ratings
         '''
-        return X.apply(lambda row: self._preds.loc[row['user_id']](row['business_id']), axis=1)
+        return X[1].apply(lambda row: self._preds.ix[row['user_id'],0](row['business_id']), axis=1)
 
