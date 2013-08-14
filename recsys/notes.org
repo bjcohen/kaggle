@@ -29,6 +29,19 @@
 ** RBMs
 ** Matrix Factorization or SVD++
 ** Koren Integrated
+** Data
+*** Separate Model per geographic state
+*** Latent (binary reviews)
+*** Test reviews 60/33/6 in user_data
+*** Train reviews 94/0/6 in user_data
+*** Test reviews 53/47 in bus_data
+*** Train reviews 100/0 in bus_data
+** Add in content features
+*** ignore review content for now
+*** ignore checkin content for now
+*** user: review_count, average_stars (user when missing bias?), votes
+*** business: stars, address/lat/lng/name/state/city, review_count, open, categories
+*** user preferences for certain geographies (etc.) - rf?
 * Footnotes
 
 [fn:1] BellKorenVolinsky2008
