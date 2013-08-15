@@ -7,6 +7,7 @@ import operator
 import datetime
 
 import ngbr
+import rbm
 
 from sklearn.decomposition import PCA
 from sklearn.ensemble import RandomForestRegressor, RandomForestClassifier, GradientBoostingRegressor, GradientBoostingClassifier
@@ -136,8 +137,13 @@ if __name__ == '__main__':
     # kn.fit((pd.concat([bus_data, bus_data_test]), review_data, pd.concat([user_data, user_data_test]),
     #         pd.concat([checkin_data, checkin_data_test])))
 
-    reload(ngbr)
-    ki = ngbr.KorenIntegrated(n_iter=1)
-    ki.fit((pd.concat([bus_data, bus_data_test]), review_data.iloc[:1000], review_data.iloc[:2000], pd.concat([user_data, user_data_test]),
-            pd.concat([checkin_data, checkin_data_test])))
-    ki_pred = ki.predict(review_data.iloc[1000:2000])
+    # reload(ngbr)
+    # ki = ngbr.KorenIntegrated(n_iter=10)
+    # ki.fit((pd.concat([bus_data, bus_data_test]), review_data.iloc[:180000], review_data.iloc[:220000], pd.concat([user_data, user_data_test]),
+    #         pd.concat([checkin_data, checkin_data_test])))
+    # ki_pred = ki.predict(review_data.iloc[180000:220000])
+
+    reload(rbm)
+    r = rbm.RBM()
+    r.fit(pd.concat([bus_data, bus_data_test]), review_data.iloc[:100])
+    r.predict(review_data.iloc[:100], review_data.iloc[:100])
