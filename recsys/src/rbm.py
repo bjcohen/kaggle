@@ -3,15 +3,15 @@ import pandas as pd
 
 import logging
 import itertools
+import time
 
 from sklearn.base import BaseEstimator, ClassifierMixin
 
+## TODO
 class GaussianRBM(BaseEstimator, ClassifierMixin):
     pass
 
-class ConditionalRBM(BaseEstimator, ClassifierMixin):
-    pass
-
+## TODO
 class ConditionalFactoredRBM(BaseEstimator, ClassifierMixin):
     pass
 
@@ -33,44 +33,53 @@ def softmax(w):
     return e / np.sum(e, axis=1).reshape(n, 1)
 
 class RBM(BaseEstimator, ClassifierMixin):
-    def __init__(self, T=1, n_hidden=100, hidden_type='binary', scale = 0.001, rating_levels=[1,2,3,4,5],
-                 momentum=0., lam=0.01, batch_size=200, learning_rate=0.2, epochs=1):
-        self.T = T
+    def __init__(self, T=1, n_hidden=100, hidden_type='binary', scale = 0.01, rating_levels=pd.Index([1,2,3,4,5]),
+                 momentum=0., lam=0.01, batch_size=200, learning_rate=0.2, epochs=1, conditional=True):
+        self.T = T                           # TODO: use adaptive CD-T (increasing T in steps)
         self.n_hidden = n_hidden
         self.hidden_type = hidden_type
         self.scale = scale
-        self.rating_levels = pd.Index(rating_levels)
+        self.rating_levels = rating_levels
         self.momentum = momentum
         self.lam = lam
-        self.batch_size = batch_size
+        self.batch_size = batch_size # TODO: possibly use this - SMH used n=1000 minibatchs
         self.learning_rate = learning_rate
         self.epochs = epochs
+        self.conditional = conditional
 
-        self.h_bias_ = np.array(None)
-        self.v_bias_ = np.array(None)
-        self.weights_ = np.array(None)
+        self.h_bias_ = None
+        self.v_bias_ = None
+        self.weights_ = None
         self._hidden = None
+        self.implicit_weights_ = None
 
-    def fit(self, items, ratings):
+    def fit(self, items, ratings, implicit=None):
+        if implicit is None and self.conditional:
+            raise RuntimeError('Need implicit ratings for conditional rbm')
+        
         self._item_index = items.index
+        self._implicit_map = implicit.groupby('user_id').groups
+        self._implicit_map = {k : self._item_index.reindex(implicit.loc[self._implicit_map[k], 'business_id'])[1] for k in self._implicit_map}
         self._ratings = ratings.copy()
 
-        # self.h_bias_ = 2 * self.scale * np.random.randn(self.n_hidden)
-        # self.v_bias_ = self.scale * np.random.randn(items.index.shape[0], self.n_rating_levels)
-        # self.weights_ = self.scale * np.random.randn(self.n_rating_levels, self.n_hidden, self.n_visible)
-
-        self.h_bias_ = np.zeros(self.n_hidden)
-        self.v_bias_ = np.zeros((items.index.shape[0], self.n_rating_levels))
-        self.weights_ = np.zeros((self.n_rating_levels, self.n_hidden, self.n_visible))
+        self.h_bias_ = self.h_bias_ or self.scale * np.random.randn(self.n_hidden)
+        self.v_bias_ = self.v_bias_ or self.scale *  np.random.randn(items.index.shape[0], self.n_rating_levels)
+        self.weights_ = self.weights_ or self.scale * np.random.randn(self.n_rating_levels, self.n_hidden, self.n_visible)
+        self.implicit_weights_ = self.implicit_weights_ or self.scale * np.random.randn(self.n_hidden, self.n_visible)
 
         self._grad_hid = np.zeros_like(self.h_bias_)
         self._grad_vis = np.zeros_like(self.v_bias_)
         self._grad_weights = np.zeros_like(self.weights_)
+        self._grad_implicit_weights = np.zeros_like(self.implicit_weights_)
+        if self.conditional:
+            self._hidden = self._conditional
+        else:
+            self._hidden = self._binary
         
-        ## self._hidden = self.hidden_type=='binary' and sigmoid or identity
-
         ratings_map = ratings.groupby('user_id').groups
-        for _ in range(self.epochs):
+        for ei in range(self.epochs):
+            print 'training epoch %d' % ei
+            t1 = time.clock()
             for uid in ratings_map:
                 ratings_uid = ratings.loc[ratings_map[uid],'stars']
                 bids = ratings.loc[ratings_map[uid],'business_id']
@@ -79,35 +88,49 @@ class RBM(BaseEstimator, ClassifierMixin):
                 _, bid_indices = self._item_index.reindex(bids)
                 ratings_ = np.zeros((n_ratings, self.n_rating_levels))
                 ratings_[np.arange(n_ratings), self.rating_levels.reindex(ratings_uid)[1]] = 1.
-                
-                gradients = self.calculate_gradients(ratings_, bid_indices)
-                self.apply_gradients(*gradients, learning_rate=self.learning_rate, item_indices=bid_indices)
-        
+
+                if self.conditional:
+                    r = self._implicit_map[uid]
+                else: r = None
+                gradients = self.calculate_gradients(ratings_, bid_indices, r)
+                self.apply_gradients(*gradients, learning_rate=self.learning_rate, item_indices=bid_indices, r=r)
+            print 'took %d seconds' % (time.clock() - t1)
+
+    def _binary(self, item_indices, visible, r=None):
+        return sigmoid(np.tensordot(self.weights_[:,:,item_indices], visible, axes=([0,2],[1,0])).T + self.h_bias_)
+
+    def _conditional(self, item_indices, visible, r):
+        svw = np.tensordot(self.weights_[:,:,item_indices], visible, axes=([0,2],[1,0])).T
+        srd = self.implicit_weights_[:,r].sum(axis=1)
+        return sigmoid(svw + srd + self.h_bias_)
+    
     @property
     def n_visible(self): return self.v_bias_.shape[0]
 
     @property
     def n_rating_levels(self): return self.rating_levels.shape[0]
 
-    def iter_passes(self, visible, item_indices=None):
+    def iter_passes(self, visible, item_indices=None, r=None):
         if item_indices is None:
             item_indices = slice(None, None)
         while True:
             ## weights: ratings x nhidden x nvisible
             ## visible: nvisible x ratings
             ## h_bias : nhidden
-            hidden = bernoulli(sigmoid(np.tensordot(self.weights_[:,:,item_indices], visible, axes=([0,2],[1,0])).T + self.h_bias_))
+            hidden = bernoulli(self._hidden(item_indices, visible, r))
             yield visible, hidden
             ## hidden: nhidden
             ## weights: ratings x nhidden x nvisible
             ## v_bias: nvisible x ratings
             visible = softmax(np.tensordot(hidden, self.weights_[:,:,item_indices], axes=(0, 1)).T + self.v_bias_[item_indices,:])
 
-    def calculate_gradients(self, visible, item_indices=None):
-        passes = self.iter_passes(visible, item_indices)
+    def calculate_gradients(self, visible, item_indices=None, r=None):
+        passes = self.iter_passes(visible, item_indices, r)
         
         v0, h0 = passes.next()
-        v1, h1 = itertools.islice(passes, self.T, self.T+1).next()
+        vs, hs = zip(*itertools.islice(passes, 0, self.T))
+        v1 = np.mean(np.vstack(vs), axis=0)
+        h1 = np.mean(np.vstack(hs), axis=0)
 
         ## h: nhidden
         ## v: nvisible * nratings
@@ -120,20 +143,26 @@ class RBM(BaseEstimator, ClassifierMixin):
 
         return gw, gv, gh
 
-    def apply_gradients(self, weights, visible, hidden, learning_rate, item_indices=None):
+    def apply_gradients(self, weights, visible, hidden, learning_rate, item_indices=None, r=None):
         if item_indices is None:
             item_indices = slice(None, None)
 
         self._grad_vis *= self.momentum
-        self._grad_vis[item_indices,:] -=  learning_rate * visible
+        self._grad_vis[item_indices,:] +=  learning_rate * (visible - self.lam * self.v_bias_[item_indices,:])
         self.v_bias_ += self._grad_vis
 
-        self._grad_hid = self.momentum * self._grad_hid - learning_rate * hidden
+        self._grad_hid = self.momentum * self._grad_hid + learning_rate * (hidden - self.lam * self.h_bias_)
         self.h_bias_ += self._grad_hid
 
         self._grad_weights *= self.momentum
-        self._grad_weights[:,:,item_indices] -= learning_rate * weights
+        self._grad_weights[:,:,item_indices] += learning_rate * (weights - self.lam * self.weights_[:,:,item_indices])
         self.weights_ += self._grad_weights
+
+        if self.conditional:
+            self._grad_implicit_weights *= self.momentum
+            self._grad_implicit_weights[:,r] += learning_rate * (hidden - self.lam * self.h_bias_).reshape(self.n_hidden, 1)
+            self.implicit_weights_ += self._grad_implicit_weights
+        
 
     def predict(self, to_predict, method='exp'):
         '''
