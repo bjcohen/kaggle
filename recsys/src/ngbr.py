@@ -7,6 +7,9 @@ from sklearn.base import BaseEstimator, RegressorMixin
 import logging
 import time
 
+class KorenSVDPP(BaseEstimator, RegressorMixin):
+    pass
+
 class KorenNgbr(BaseEstimator, RegressorMixin):
     '''Nearest-Neighbors algorithm from [Koren2008]
 
@@ -333,7 +336,7 @@ class KorenIntegrated(BaseEstimator, RegressorMixin):
             neighborhood = invroot_R_mag*self.w_ij_[xi,w_yi].dot(np.subtract(review_data_user.loc[:,'stars'], b_u))
             neighborhood_implicit = invroot_N_mag * self.w_ij_[xi,c_yi].sum()
             
-            return general + latent + neighborhood + neighborhood_implicit
+            return general + latent + neighborhood[0] + neighborhood_implicit
         else:
             review_data_implicit_user = self._review_data_implicit.loc[self._review_implicit_map[uid]]
             
