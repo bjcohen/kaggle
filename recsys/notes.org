@@ -15,6 +15,7 @@
 *** Bucket by support
 *** Separate OLS model per bucket
 *** Or, bucket randomly and average coefs
+*** GBDT blending
 ** Asymmetric Factor Models
 ** Regression
 ** RBM-Gaussian
@@ -26,9 +27,12 @@
 ** Similarity Scores
 *** EditSim [fn:1]
 * TODO
-** RBMs
-** Matrix Factorization or SVD++
-** Koren Integrated
+** DONE RBMs
+** DONE Koren Integrated
+** Baseline predictors - user/item/joint biases - exp weighted biases?
+** KNN - content based similarity scores / regular (shrunken) scores?
+** NNMF
+** SVD++
 ** Data
 *** Separate Model per geographic state
 *** Latent (binary reviews)
