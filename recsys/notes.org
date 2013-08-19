@@ -16,6 +16,8 @@
 *** Separate OLS model per bucket
 *** Or, bucket randomly and average coefs
 *** GBDT blending
+*** Train on residuals
+*** blend on RBM probabilities instead of predictions
 ** Asymmetric Factor Models
 ** Regression
 ** RBM-Gaussian
@@ -33,6 +35,7 @@
 ** KNN - content based similarity scores / regular (shrunken) scores?
 ** NNMF
 ** SVD++
+** Postprocessing - nonlinear envelopes (shifted sigmoid) / skewing (fit a poly)
 ** Data
 *** Separate Model per geographic state
 *** Latent (binary reviews)
