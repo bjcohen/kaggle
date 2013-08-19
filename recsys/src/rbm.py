@@ -137,7 +137,7 @@ class RBM(BaseEstimator, ClassifierMixin):
         ## w: ratings x nhidden x nvisible
         nhidden = h0.shape[0]
         nvisible, nratings = v0.shape
-        gw = (np.rollaxis(np.tensordot(v0.T, h0, axes=0), 2, 1) - np.rollaxis(np.tensordot(v1.T, h0, axes=0), 2, 1))
+        gw = np.rollaxis(np.tensordot(v0.T, h0, axes=0), 2, 1) - np.rollaxis(np.tensordot(v1.reshape(self.n_rating_levels, 1), h1, axes=0), 2, 1)
         gv = (v0 - v1)
         gh = (h0 - h1)
 
