@@ -104,6 +104,9 @@ class NNMF(BaseEstimator, RegressorMixin):
                                index=items.index,
                                columns=range(self.n_factors))
 
+        self.mu_ = ratings.loc[:,'stars'].mean()
+        ratings.loc[:,'stars'] -= self.mu_
+        
         if self.estimation_method == 'simu':
             for ii in range(self.n_iter):
                 for uid, u_r in self._users.iteritems():
@@ -144,23 +147,25 @@ class NNMF(BaseEstimator, RegressorMixin):
                 last_err = 0
                 this_err = self._err(ratings)
                 print this_err
-                while last_err == 0 or (this_err / last_err < (1 - self.eps) or this_err > last_err):
+                while last_err == 0 or this_err / last_err < (1 - self.eps):
                     for uid, u_r in self._users.iteritems():
                         bids = ratings.loc[u_r,'business_id']
                         r = res_ui.loc[itertools.izip(itertools.repeat(uid), bids)]
                         r.index = r.index.droplevel('business_id')
                         q = self.q_.ix[bids,f]
-                        self.p_.loc[uid,f] = np.array(np.divide(r.dot(q), q.T.dot(q)))
+                        self.p_.loc[uid,f] += self.eps * np.array(np.divide(r.dot(q), q.T.dot(q)))
                     for bid, b_r in self._businesses.iteritems():
                         uids = ratings.loc[b_r,'user_id']
                         r = res_ui.loc[itertools.izip(uids, itertools.repeat(bid))]
                         r.index = r.index.droplevel('user_id')
                         p = self.p_.ix[uids,f]
-                        self.q_.loc[bid,f] = np.array(np.divide(r.dot(p), p.T.dot(p)))
+                        self.q_.loc[bid,f] += self.eps * np.array(np.divide(r.dot(p), p.T.dot(p)))
                     last_err = this_err
                     this_err = self._err(ratings)
                     print this_err
                 pdb.set_trace()
+                ## self.p_.loc[self._users.keys(),0]
+                ## self.q_.loc[self._businesses.keys(),0]
                 print this_err, last_err
                     
         return self
@@ -212,4 +217,4 @@ class NNMF(BaseEstimator, RegressorMixin):
         # for _, row in X.iterrows():
         #     np.dot(self._get_p(row, sims), self.q_.loc[row.loc['business_id']])
             
-        return X.apply(lambda row: np.dot(self._get_p(row, sims), self.q_.loc[row.loc['business_id']]), axis=1)
+        return X.apply(lambda row: np.dot(self._get_p(row, sims), self.q_.loc[row.loc['business_id']]) + self.mu_, axis=1)
