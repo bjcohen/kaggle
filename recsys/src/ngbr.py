@@ -167,7 +167,7 @@ class KorenNgbr(BaseEstimator, RegressorMixin):
             
             general = self.mu_+self.b_user_.loc[uid]+self.b_item_.loc[bid]
             neighborhood = invroot_R_mag*self.w_ij_[xi,w_yi].dot(np.subtract(review_data_user.loc[:,'stars'], b_u))
-            neighborhood_implicit = invroot_N_mag * self.w_ij_[xi,c_yi].sum()
+            neighborhood_implicit = invroot_N_mag * self.c_[xi,c_yi].sum()
             
             return general + neighborhood[0] + neighborhood_implicit
         else:
@@ -181,7 +181,7 @@ class KorenNgbr(BaseEstimator, RegressorMixin):
             c_yi = self._w_ij_index.reindex(N_items)[1]
             
             general = self.mu_+self.b_item_.loc[bid]
-            neighborhood_implicit = invroot_N_mag * self.w_ij_[xi,c_yi].sum()
+            neighborhood_implicit = invroot_N_mag * self.c_[xi,c_yi].sum()
             
             return general + neighborhood_implicit
 
@@ -379,7 +379,7 @@ class KorenIntegrated(BaseEstimator, RegressorMixin):
             general = self.mu_+self.b_user_.loc[uid]+self.b_item_.loc[bid]
             latent = np.dot(self.q_.loc[bid,:], np.add(self.p_.loc[uid,:], invroot_N_mag * self.y_.loc[N_items].sum(axis=0)))
             neighborhood = invroot_R_mag*self.w_ij_[xi,w_yi].dot(np.subtract(review_data_user.loc[:,'stars'], b_u))
-            neighborhood_implicit = invroot_N_mag * self.w_ij_[xi,c_yi].sum()
+            neighborhood_implicit = invroot_N_mag * self.c_[xi,c_yi].sum()
             
             return general + latent + neighborhood[0] + neighborhood_implicit
         else:
@@ -394,6 +394,6 @@ class KorenIntegrated(BaseEstimator, RegressorMixin):
             
             general = self.mu_+self.b_item_.loc[bid]
             latent = np.dot(self.q_.loc[bid,:], np.add(self.p_.loc[uid,:], invroot_N_mag * self.y_.loc[N_items].sum(axis=0)))
-            neighborhood_implicit = invroot_N_mag * self.w_ij_[xi,c_yi].sum()
+            neighborhood_implicit = invroot_N_mag * self.c_[xi,c_yi].sum()
             
             return general + latent + neighborhood_implicit
