@@ -125,22 +125,28 @@ class KorenIntegrated(BaseEstimator, RegressorMixin):
           .union(pd.Index(review_data['user_id'].unique())) \
           .union(pd.Index(review_data_implicit['user_id'].unique())) \
           .unique()
-        self.b_user_ = pd.Series(0, index=all_user_index)
-        self.b_item_ = pd.Series(0, index=bus_data.index)
+        all_user_index = pd.Index(all_user_index)
+          
+        self.mu_ = review_data['stars'].mean()
+        
+        user_means = review_data.groupby('user_id')['stars'].agg(np.mean)
+        self.b_user_ = pd.Series(all_user_index.map(lambda x: user_means.get(x, 0) - self.mu_), index=all_user_index)
+
+        bus_means = review_data.groupby('business_id')['stars'].agg(np.mean)
+        self.b_item_ = pd.Series(bus_data.index.map(lambda x: bus_means.get(x, 0) - self.mu_), index=bus_data.index)
 
         if self._use_w or self._use_c:
             self._w_ij_index = bus_data.index
         if self._use_w:
-            self.w_ij_ = sp.sparse.lil_matrix((bus_data.shape[0], bus_data.shape[0]))
+            self.w_ij_ = self.w_ij_ or sp.sparse.lil_matrix((bus_data.shape[0], bus_data.shape[0]))
         if self._use_c:
-            self.c_ = sp.sparse.lil_matrix((bus_data.shape[0], bus_data.shape[0]))
+            self.c_ = self.c_ or sp.sparse.lil_matrix((bus_data.shape[0], bus_data.shape[0]))
         if self._use_p:
-            self.p_ = pd.DataFrame(0, index=all_user_index, columns=range(self.n_factors))
+            self.p_ = self.p_ or pd.DataFrame(0.001*np.random.randn(all_user_index.shape[0], self.n_factors), index=all_user_index, columns=range(self.n_factors))
         if self._use_p or self._use_y:
-            self.q_ = pd.DataFrame(0, index=bus_data.index, columns=range(self.n_factors))
+            self.q_ = self.q_ or pd.DataFrame(0.001*np.random.randn(bus_data.index.shape[0], self.n_factors), index=bus_data.index, columns=range(self.n_factors))
         if self._use_y:
-            self.y_ = pd.DataFrame(0, index=bus_data.index, columns=range(self.n_factors))
-        self.mu_ = review_data['stars'].mean()
+            self.y_ = self.y_ or pd.DataFrame(0.001*np.random.randn(bus_data.index.shape[0], self.n_factors), index=bus_data.index, columns=range(self.n_factors))
 
         self._review_data = review_data
         self._review_data_implicit = review_data_implicit
@@ -154,7 +160,7 @@ class KorenIntegrated(BaseEstimator, RegressorMixin):
         for iiter in xrange(self.n_iter):
             irev = 1
             for i, (uid, bid, stars) in review_data[['user_id', 'business_id', 'stars']].iterrows():
-                if irev % 1000 == 0: print "on iter %d review %d" % (iiter, irev)
+                if irev % 100000 == 0: print "on iter %d review %d" % (iiter, irev)
                 irev += 1
                 err = stars - self._pred(uid, bid)
                 invroot_R_mag = len(self._review_map[uid]) ** -0.5
@@ -189,6 +195,9 @@ class KorenIntegrated(BaseEstimator, RegressorMixin):
                 if self._use_c:
                     c_yi = self._w_ij_index.reindex(review_data_implicit.loc[self._review_implicit_map[uid],'business_id'])[1]
                     self.c_[xi,c_yi] = self.c_[xi,c_yi] + self.gam3 * np.subtract(invroot_N_mag * err, self.lam8 * self.c_[xi,c_yi].todense())
+
+            self.predicted_ = self.predict(review_data)
+            print 'train MSE = %f' % (np.sqrt(np.mean(np.power(review_data.loc[:,'stars'] - self.predicted_, 2))))
 
         t3 = time.clock()
         print 'finished training in %dm' % ((t3 - t2) / 60.)
