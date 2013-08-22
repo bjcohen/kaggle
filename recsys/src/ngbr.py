@@ -187,6 +187,7 @@ class KorenIntegrated(BaseEstimator, RegressorMixin):
                 ## neighborhood
                 if self._use_w or self._use_c:
                     xi = self._w_ij_index.get_loc(bid)
+
                 if self._use_w:
                     w_yi = self._w_ij_index.reindex(review_data.loc[self._review_map[uid],'business_id'])[1]
                     base_rat = self.mu_ + self.b_user_.loc[uid] + self.b_item_.loc[review_data.loc[self._review_map[uid],'business_id']]
@@ -235,6 +236,7 @@ class KorenIntegrated(BaseEstimator, RegressorMixin):
         review_data_implicit_user = self._review_data_implicit.loc[self._review_implicit_map[uid]]
         N_items = review_data_implicit_user.loc[:,'business_id']
         invroot_N_mag = review_data_implicit_user.shape[0] ** -0.5
+
         if self._use_w or self._use_c:
             xi = self._w_ij_index.get_loc(bid)
 
