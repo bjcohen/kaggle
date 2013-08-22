@@ -149,41 +149,27 @@ class KorenNgbr(BaseEstimator, RegressorMixin):
         -------
         y : predicted rating
         '''
+        review_data_implicit_user = self._review_data_implicit.loc[self._review_implicit_map[uid]]
+        N_items = review_data_implicit_user.loc[:,'business_id']
+        invroot_N_mag = review_data_implicit_user.shape[0] ** -0.5
+        xi = self._w_ij_index.get_loc(bid)
+        c_yi = self._w_ij_index.reindex(N_items)[1]
+        
         if uid in self._review_map:
             review_data_user = self._review_data.loc[self._review_map[uid]]
-            review_data_implicit_user = self._review_data_implicit.loc[self._review_implicit_map[uid]]
-            
             R_items = review_data_user.loc[:,'business_id']
-            N_items = review_data_implicit_user.loc[:,'business_id']
-            
             b_u = self.mu_ + np.add(self.b_user_.loc[uid], self.b_item_.loc[R_items])
-            
             invroot_R_mag = review_data_user.shape[0] ** -0.5
-            invroot_N_mag = review_data_implicit_user.shape[0] ** -0.5
-            
-            xi = self._w_ij_index.get_loc(bid)
             w_yi = self._w_ij_index.reindex(R_items)[1]
-            c_yi = self._w_ij_index.reindex(N_items)[1]
-            
             general = self.mu_+self.b_user_.loc[uid]+self.b_item_.loc[bid]
-            neighborhood = invroot_R_mag*self.w_ij_[xi,w_yi].dot(np.subtract(review_data_user.loc[:,'stars'], b_u))
-            neighborhood_implicit = invroot_N_mag * self.c_[xi,c_yi].sum()
-            
-            return general + neighborhood[0] + neighborhood_implicit
+            neighborhood = (invroot_R_mag*self.w_ij_[xi,w_yi].dot(np.subtract(review_data_user.loc[:,'stars'], b_u)))[0]
         else:
-            review_data_implicit_user = self._review_data_implicit.loc[self._review_implicit_map[uid]]
-            
-            N_items = review_data_implicit_user.loc[:,'business_id']
-            
-            invroot_N_mag = review_data_implicit_user.shape[0] ** -0.5
-            
-            xi = self._w_ij_index.get_loc(bid)
-            c_yi = self._w_ij_index.reindex(N_items)[1]
-            
             general = self.mu_+self.b_item_.loc[bid]
-            neighborhood_implicit = invroot_N_mag * self.c_[xi,c_yi].sum()
-            
-            return general + neighborhood_implicit
+            neighborhood = 0
+
+        neighborhood_implicit = invroot_N_mag * self.c_[xi,c_yi].sum()
+        
+        return general + neighborhood + neighborhood_implicit
 
 class KorenIntegrated(BaseEstimator, RegressorMixin):
     '''Integrated model from [Koren2008]
@@ -360,40 +346,25 @@ class KorenIntegrated(BaseEstimator, RegressorMixin):
         -------
         y : predicted rating
         '''
+        review_data_implicit_user = self._review_data_implicit.loc[self._review_implicit_map[uid]]
+        N_items = review_data_implicit_user.loc[:,'business_id']
+        invroot_N_mag = review_data_implicit_user.shape[0] ** -0.5
+        xi = self._w_ij_index.get_loc(bid)
+        c_yi = self._w_ij_index.reindex(N_items)[1]
+        
         if uid in self._review_map:
             review_data_user = self._review_data.loc[self._review_map[uid]]
-            review_data_implicit_user = self._review_data_implicit.loc[self._review_implicit_map[uid]]
-            
             R_items = review_data_user.loc[:,'business_id']
-            N_items = review_data_implicit_user.loc[:,'business_id']
-            
-            b_u = self.mu_ + np.add(self.b_user_.loc[uid], self.b_item_.loc[R_items])
-            
             invroot_R_mag = review_data_user.shape[0] ** -0.5
-            invroot_N_mag = review_data_implicit_user.shape[0] ** -0.5
-            
-            xi = self._w_ij_index.get_loc(bid)
+            b_u = self.mu_ + np.add(self.b_user_.loc[uid], self.b_item_.loc[R_items])
             w_yi = self._w_ij_index.reindex(R_items)[1]
-            c_yi = self._w_ij_index.reindex(N_items)[1]
-            
             general = self.mu_+self.b_user_.loc[uid]+self.b_item_.loc[bid]
-            latent = np.dot(self.q_.loc[bid,:], np.add(self.p_.loc[uid,:], invroot_N_mag * self.y_.loc[N_items].sum(axis=0)))
-            neighborhood = invroot_R_mag*self.w_ij_[xi,w_yi].dot(np.subtract(review_data_user.loc[:,'stars'], b_u))
-            neighborhood_implicit = invroot_N_mag * self.c_[xi,c_yi].sum()
-            
-            return general + latent + neighborhood[0] + neighborhood_implicit
+            neighborhood = (invroot_R_mag*self.w_ij_[xi,w_yi].dot(np.subtract(review_data_user.loc[:,'stars'], b_u)))[0]
         else:
-            review_data_implicit_user = self._review_data_implicit.loc[self._review_implicit_map[uid]]
-            
-            N_items = review_data_implicit_user.loc[:,'business_id']
-            
-            invroot_N_mag = review_data_implicit_user.shape[0] ** -0.5
-            
-            xi = self._w_ij_index.get_loc(bid)
-            c_yi = self._w_ij_index.reindex(N_items)[1]
-            
             general = self.mu_+self.b_item_.loc[bid]
-            latent = np.dot(self.q_.loc[bid,:], np.add(self.p_.loc[uid,:], invroot_N_mag * self.y_.loc[N_items].sum(axis=0)))
-            neighborhood_implicit = invroot_N_mag * self.c_[xi,c_yi].sum()
+            neighborhood = 0
             
-            return general + latent + neighborhood_implicit
+        latent = np.dot(self.q_.loc[bid,:], np.add(self.p_.loc[uid,:], invroot_N_mag * self.y_.loc[N_items].sum(axis=0)))
+        neighborhood_implicit = invroot_N_mag * self.c_[xi,c_yi].sum()
+            
+        return general + latent + neighborhood + neighborhood_implicit
