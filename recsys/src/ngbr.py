@@ -224,7 +224,8 @@ class KorenIntegrated(BaseEstimator, RegressorMixin):
     def __init__(self, gam1=0.007, gam2=0.007, gam3=0.001,
                  lam6=0.005, lam7=0.015, lam8=0.015,
                  n_iter=1, n_factors=50,
-                 k=300, shrinkage=50):
+                 k=300, shrinkage=50,
+                 model_type='integrated'):
         self.gam1 = gam1
         self.gam2 = gam2
         self.gam3 = gam3
@@ -233,6 +234,12 @@ class KorenIntegrated(BaseEstimator, RegressorMixin):
         self.lam8 = lam8
         self.n_iter = n_iter
         self.n_factors = n_factors
+
+        ## todo: integrate all this code
+        ## svd++: just b_ui, q, p, y
+        ## nsvd: just b_ui, q, y
+        ## neighbors: mu, b_ui, w, c
+        model_type_allowed = ['integrated', 'svd++', 'nsvd', 'neighbors']
 
         ## not implemented
         self.k = k
