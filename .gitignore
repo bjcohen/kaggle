@@ -12,3 +12,4 @@
 *.mexw32
 *.m~
 .DS_Store
+.ipynb_checkpoints
