@@ -174,8 +174,7 @@ class RBM(BaseEstimator, ClassifierMixin):
 
         to_predict : vector of user-item pairs to predict
 
-        method : method, mf = mean-field
-                         map = argmax unnormalized score
+        method : method, map = argmax unnormalized score
                          exp = expectation over normalized scores
                          prob = normalized probabilities
 
@@ -183,10 +182,38 @@ class RBM(BaseEstimator, ClassifierMixin):
         -------
         y : predicted ratings
         '''
-        if method not in ['exp', 'map', 'prob', 'mf']:
+        if method not in ['exp', 'map', 'prob']:
             raise NotImplementedError
 
         n_pred = to_predict.shape[0]
+
+        ratings_map = self._ratings.groupby('user_id').groups
+
+        probs = np.zeros((n_pred, self.n_rating_levels))
+        
+        for qi, (_, (q, uid)) in enumerate(to_predict.loc[:,['business_id', 'user_id']].iterrows()):
+            q_index = self._item_index.get_loc(q)
+
+            ratings_uid = self._ratings.loc[ratings_map[uid],'stars']
+            bids = self._ratings.loc[ratings_map[uid],'business_id']
+                
+            n_ratings = ratings_uid.shape[0]
+            _, bid_indices = self._item_index.reindex(bids)
+            bid_indices = list(bid_indices)
+            bid_indices.append(q_index)
+            ratings_ = np.zeros((n_ratings+1, self.n_rating_levels))
+            ratings_[np.arange(n_ratings), self.rating_levels.reindex(ratings_uid)[1]] = 1.
+            
+            if self.conditional:
+                r = self._implicit_map[uid]
+            else:
+                r = None
+
+            passes = self.iter_passes(ratings_, bid_indices, r)
+            v0, h0 = passes.next()
+            v1, _ =  passes.next()
+
+            probs[qi,:] = v1[n_ratings,:]
 
         ## i = n_visible
         ## q = n_visible
@@ -194,48 +221,42 @@ class RBM(BaseEstimator, ClassifierMixin):
         ## k = n_ratings
         ## j = n_hidden
 
-        if method == 'mf':
-            raise NotImplementedError
-        
         ## TODO: fix this entire function. it is so ugly and broken
-        
-        ratings_map = self._ratings.groupby('user_id').groups
+        # pi = np.zeros((n_pred, self.n_rating_levels))
+        # gammas = np.zeros((n_pred, self.n_rating_levels))
 
-        pi = np.zeros((n_pred, self.n_rating_levels))
-        gammas = np.zeros((n_pred, self.n_rating_levels))
+        # def inner(uid, q, k, j):
+        #     q_index = self._ite_mindex.get_loc(q)
+        #     k_index = self.rating_levels.get_loc(k)
+        #     _, bid_indices = self._item_index.reindex(self._ratings.loc[ratings_map[uid],'business_id'])
 
-        def inner(uid, q, k, j):
-            q_index = self._item_index.get_loc(q)
-            k_index = self.rating_levels.get_loc(k)
-            _, bid_indices = self._item_index.reindex(self._ratings.loc[ratings_map[uid],'business_id'])
+        #     user_ratings = self._ratings.loc[ratings_map[uid]]
 
-            user_ratings = self._ratings.loc[ratings_map[uid]]
-
-            v_il = zip(self.rating_levels.reindex(user_ratings.loc[:,'stars'])[1], itertools.repeat(j),bid_indices)
-            W_l = [self.weights_[il] for il in v_il]
+        #     v_il = zip(self.rating_levels.reindex(user_ratings.loc[:,'stars'])[1], itertools.repeat(j),bid_indices)
+        #     W_l = [self.weights_[il] for il in v_il]
             
-            if q in set(user_ratings.loc[:,'business_id']) and user_ratings.loc[user_ratings.loc[:,'business_id']==q,'stars'] == k:
-                W_k = self.weights_[k_index,j,q_index]
-            else:
-                W_k = 0.
+        #     if q in set(user_ratings.loc[:,'business_id']) and user_ratings.loc[user_ratings.loc[:,'business_id']==q,'stars'] == k:
+        #         W_k = self.weights_[k_index,j,q_index]
+        #     else:
+        #         W_k = 0.
 
-            return 1 + np.exp(np.sum(W_l) + W_k + self.h_bias_[j])
+        #     return 1 + np.exp(np.sum(W_l) + W_k + self.h_bias_[j])
             
-        for qi, (_, (q, uid)) in enumerate(to_predict.loc[:,['business_id', 'user_id']].iterrows()):
-            q_index = self._item_index.get_loc(q)
-            for k in self.rating_levels:
-                k_index = self.rating_levels.get_loc(k)
-                if uid not in ratings_map:
-                    pi[qi, k_index] = np.prod(np.exp(1.+self.h_bias_))
-                    gammas[qi, k_index] = 1.
-                    continue
-                pi[qi, k_index] = np.prod([inner(uid, q, k, j) for j in range(self.n_hidden)])
-                if q in set(self._ratings.loc[ratings_map[uid],'business_id']):
-                    gammas[qi, k_index] = np.exp(self.v_bias_[q_index, k_index])
-                else:
-                    gammas[qi, k_index] = 1.
+        # for qi, (_, (q, uid)) in enumerate(to_predict.loc[:,['business_id', 'user_id']].iterrows()):
+        #     q_index = self._item_index.get_loc(q)
+        #     for k in self.rating_levels:
+        #         k_index = self.rating_levels.get_loc(k)
+        #         if uid not in ratings_map:
+        #             pi[qi, k_index] = np.prod(np.exp(1.+self.h_bias_))
+        #             gammas[qi, k_index] = 1.
+        #             continue
+        #         pi[qi, k_index] = np.prod([inner(uid, q, k, j) for j in range(self.n_hidden)])
+        #         if q in set(self._ratings.loc[ratings_map[uid],'business_id']):
+        #             gammas[qi, k_index] = np.exp(self.v_bias_[q_index, k_index])
+        #         else:
+        #             gammas[qi, k_index] = 1.
         
-        probs = gammas * pi
+        # probs = gammas * pi
 
         ## normalize and compute expectation
         probs /= np.sum(probs, axis=1).reshape(n_pred, 1)
