@@ -62,10 +62,10 @@ class RBM(BaseEstimator, ClassifierMixin):
         self._implicit_map = {k : self._item_index.reindex(implicit.loc[self._implicit_map[k], 'business_id'])[1] for k in self._implicit_map}
         self._ratings = ratings.copy()
 
-        self.h_bias_ = self.h_bias_ or self.scale * np.random.randn(self.n_hidden)
-        self.v_bias_ = self.v_bias_ or self.scale *  np.random.randn(items.index.shape[0], self.n_rating_levels)
-        self.weights_ = self.weights_ or self.scale * np.random.randn(self.n_rating_levels, self.n_hidden, self.n_visible)
-        self.implicit_weights_ = self.implicit_weights_ or self.scale * np.random.randn(self.n_hidden, self.n_visible)
+        self.h_bias_ = self.h_bias_ if self.h_bias_ is not None else self.scale * np.random.randn(self.n_hidden)
+        self.v_bias_ = self.v_bias_ if self.v_bias_ is not None else self.scale *  np.random.randn(items.index.shape[0], self.n_rating_levels)
+        self.weights_ = self.weights_ if self.weights_ is not None else  self.scale * np.random.randn(self.n_rating_levels, self.n_hidden, self.n_visible)
+        self.implicit_weights_ = self.implicit_weights_ if self.implicit_weights_ is not None else self.scale * np.random.randn(self.n_hidden, self.n_visible)
 
         self._grad_hid = np.zeros_like(self.h_bias_)
         self._grad_vis = np.zeros_like(self.v_bias_)
@@ -194,16 +194,20 @@ class RBM(BaseEstimator, ClassifierMixin):
         for qi, (_, (q, uid)) in enumerate(to_predict.loc[:,['business_id', 'user_id']].iterrows()):
             q_index = self._item_index.get_loc(q)
 
-            ratings_uid = self._ratings.loc[ratings_map[uid],'stars']
-            bids = self._ratings.loc[ratings_map[uid],'business_id']
+            if uid in ratings_map:
+                ratings_uid = self._ratings.loc[ratings_map[uid],'stars']
+                bids = self._ratings.loc[ratings_map[uid],'business_id']
+                n_ratings = ratings_uid.shape[0]
+                _, bid_indices = self._item_index.reindex(bids)
+                bid_indices = list(bid_indices)
+                bid_indices.append(q_index)
+                ratings_ = np.zeros((n_ratings+1, self.n_rating_levels))
+                ratings_[np.arange(n_ratings), self.rating_levels.reindex(ratings_uid)[1]] = 1.
+            else:
+                n_ratings = 0
+                bid_indices = [q_index]
+                ratings_ = np.zeros((1, self.n_rating_levels))
                 
-            n_ratings = ratings_uid.shape[0]
-            _, bid_indices = self._item_index.reindex(bids)
-            bid_indices = list(bid_indices)
-            bid_indices.append(q_index)
-            ratings_ = np.zeros((n_ratings+1, self.n_rating_levels))
-            ratings_[np.arange(n_ratings), self.rating_levels.reindex(ratings_uid)[1]] = 1.
-            
             if self.conditional:
                 r = self._implicit_map[uid]
             else:
