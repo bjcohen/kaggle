@@ -49,6 +49,8 @@
 *** user: review_count, average_stars (user when missing bias?), votes
 *** business: stars, address/lat/lng/name/state/city, review_count, open, categories
 *** user preferences for certain geographies (etc.) - rf?
+** https://github.com/graphlab-code/graphlab/tree/master/toolkits/collaborative_filtering
+** https://github.com/zenogantner/MyMediaLite/
 * Footnotes
 
 [fn:1] BellKorenVolinsky2008
