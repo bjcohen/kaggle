@@ -5,6 +5,8 @@ import logging
 import itertools
 import time
 
+import eda
+
 from sklearn.base import BaseEstimator, ClassifierMixin
 
 ## TODO
@@ -57,7 +59,7 @@ class RBM(BaseEstimator, ClassifierMixin):
         if implicit is None and self.conditional:
             raise RuntimeError('Need implicit ratings for conditional rbm')
         
-        self._item_index = items.index
+        self._item_index = pd.Index(items.index.unique())
         self._implicit_map = implicit.groupby('user_id').groups
         self._implicit_map = {k : self._item_index.reindex(implicit.loc[self._implicit_map[k], 'business_id'])[1] for k in self._implicit_map}
         self._ratings = ratings.copy()
@@ -273,3 +275,16 @@ class RBM(BaseEstimator, ClassifierMixin):
             Y = probs
 
         return Y
+
+if __name__ == '__main__':
+    (bus_data, review_data, user_data, checkin_data) = eda.get_train_data()
+    (bus_data_test, review_data_test, user_data_test, checkin_data_test) = eda.get_test_data()
+    (bus_data_final, review_data_final, user_data_final, checkin_data_final) = eda.get_final_data()
+
+    r = RBM(epochs=50, conditional=True, rating_levels=pd.Index([1,2,3,4,5]), learning_rate=0.01, lam=0.001, n_hidden=50, momentum=0.9)
+    r.fit(pd.concat([bus_data, bus_data_test, bus_data_final]),
+          review_data,
+          pd.concat([review_data, review_data_test, review_data_final]))
+    r_pred = r.predict(review_data_final, method='exp')
+    pd.DataFrame({'review_id' : review_data_final.index, 'stars' : np.maximum(0, np.minimum(5, r_pred))}).to_csv('../rbm_submission_e50_h50.csv',index=False)
+
