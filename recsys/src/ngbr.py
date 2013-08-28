@@ -7,6 +7,9 @@ from sklearn.base import BaseEstimator, RegressorMixin
 import logging
 import time
 import itertools
+import datetime
+
+import eda
 
 class KorenIntegrated(BaseEstimator, RegressorMixin):
     '''Integrated model from [Koren2008]
@@ -84,7 +87,7 @@ class KorenIntegrated(BaseEstimator, RegressorMixin):
     (Koren, KDD 2009) for a description of time-varying parameters.
     '''
     
-    def __init__(self, gam1=0.007, gam2=0.007, gam3=0.001, gam4=0.0001,
+    def __init__(self, gam1=0.007, gam2=0.007, gam3=0.001, gam4=0.000001,
                  lam6=0.005, lam7=0.015, lam8=0.015, lam9=0.02,
                  n_iter=1, n_factors=50,
                  k=300, shrinkage=50, item_similarity=None,
@@ -116,7 +119,10 @@ class KorenIntegrated(BaseEstimator, RegressorMixin):
             'neighbors' : ['w', 'c'],
             'timesvd++' : ['p', 'y', 'tb', 'tp'],
             'timeneighbors' : ['w', 'c', 'tb', 'tr'],
+            'locneighbors' : ['w', 'c', 'lb'],
+            'locintegrated' : ['p', 'y', 'c', 'w', 'lb'],
         }
+        ## TODO: tp, lp, lr
 
         if model_type not in self.model_types:
             raise RuntimeError('model_type must be in %s' % self.model_types.keys())
@@ -128,7 +134,8 @@ class KorenIntegrated(BaseEstimator, RegressorMixin):
         ## not implemented
         self.k = k
         self.shrinkage = shrinkage
-        self.item_similarity = item_similarity                  # TODO: incorporate other similarity metrics...
+        ## TODO: incorporate other similarity metrics - so we have a base case for cold-start users
+        self.item_similarity = item_similarity                  
 
         ## model parameters
         self.mu_ = None                   # global mean
@@ -170,10 +177,7 @@ class KorenIntegrated(BaseEstimator, RegressorMixin):
         for feature in self.model_types[self.model_type]:
             self.__setattr__('_use_' + feature, True)
             
-        all_user_index = user_data.index \
-          .union(pd.Index(review_data['user_id'].unique())) \
-          .union(pd.Index(review_data_implicit['user_id'].unique())) \
-          .unique()
+        all_user_index = np.unique(np.union1d(user_data.index, np.union1d(review_data['user_id'], review_data_implicit['user_id'])))
         all_user_index = pd.Index(all_user_index)
           
         self.mu_ = review_data['stars'].mean()
@@ -200,25 +204,36 @@ class KorenIntegrated(BaseEstimator, RegressorMixin):
 
         n_days = np.max(review_data.loc[:,'age'])
         if self._use_tb:
+            ## bt-"bucketed-time" t-"time" alpha-"deviance coefficient"
             self._day_bucket_width = n_days / self.n_buckets + 1
             self.b_item_bt_ = self.b_item_bt_ if self.b_item_bt_ is not None else sp.sparse.lil_matrix((self._w_ij_index.shape[0], self.n_buckets))
             self.b_user_t_ = self.b_user_t_ if self.b_user_t_ is not None else sp.sparse.lil_matrix((all_user_index.shape[0], n_days+1))
             self.b_user_alpha_ = pd.Series(0, index=all_user_index)
-        if self._use_tp:                  #TODO: find a way to make 3d sparse tensors work
+        if self._use_tp:
             self.p_t_ = self.p_t_ if self.p_t_ is not None else sp.sparse.lil_matrix((all_user_index.shape[0], n_days, self.n_factors))
             self.p_alpha_ = self.p_alpha_ if self.p_alpha_ is not None else sp.sparse.lil_matrix((all_user_index.shape[0], n_days, self.n_factors))
         if self._use_tr:
             self.w_beta_ = pd.Series(0, index=all_user_index)
 
+        if self._use_lb:
+            self._lat_mean = bus_data['latitude'].mean()
+            self._lng_mean = bus_data['longitude'].mean()
+            bus_data['lat'] = bus_data['latitude'] - self._lat_mean
+            bus_data['lng'] = bus_data['longitude'] - self._lng_mean
+            self.b_user_phi_ = pd.DataFrame(0, index=all_user_index, columns=['lat', 'lng'])
+            
         self._review_data = review_data
         self._review_data_implicit = review_data_implicit
         self._review_map = review_data.groupby('user_id').groups
         self._review_implicit_map = review_data_implicit.groupby('user_id').groups
 
+        self._bus_data = bus_data.groupby(level=0).last()
+        
         print 'starting training'
         t2 = time.clock()
 
         self._user_average_age = review_data.groupby('user_id')['age'].mean()
+        self._user_average_loc = review_data.merge(self._bus_data[['latitude','longitude']], how='left', left_on='business_id', right_index=True).groupby('user_id')[['latitude', 'longitude']].mean()
         
         for iiter in xrange(self.n_iter):
             irev = 1
@@ -242,6 +257,14 @@ class KorenIntegrated(BaseEstimator, RegressorMixin):
                     self.b_item_bt_[xi, bucket_index] += self.gam1 * (err - self.lam8 * self.b_item_bt_[xi, bucket_index])
                     self.b_user_t_[user_index, age] += self.gam1 * (err - self.lam8 * self.b_user_t_[user_index, age])
                     self.b_user_alpha_.loc[uid] += self.gam1 * (err*self._dev(self._user_average_age.loc[uid], age) - self.lam8 * self.b_user_alpha_.loc[uid])
+
+                if self._use_lb:
+                    if bid in self._bus_data.index and not np.isnan(self._bus_data.loc[bid, 'lat']) and not np.isnan(self._bus_data.loc[bid, 'lng']):
+                        lat = self._bus_data.loc[bid, 'lat']
+                        lng = self._bus_data.loc[bid, 'lng']
+                    else:
+                        lat, lng = (self._lat_mean, self._lng_mean)
+                    self.b_user_phi_.loc[uid] += self.gam1 * (err*self._dev(self._user_average_loc.loc[uid], [lat, lng]) - self.lam8*self.b_user_phi_.loc[uid])
                 
                 ## latent
                 N_items = self._review_data_implicit.loc[self._review_implicit_map[uid],'business_id']
@@ -306,6 +329,8 @@ class KorenIntegrated(BaseEstimator, RegressorMixin):
         return X.apply(lambda row: self._pred(row['user_id'], row['business_id']), axis=1)
 
     def _dev(self, x1, x2):
+        x1 = np.array(x1)
+        x2 = np.array(x2)
         return np.sign(x1-x2) * np.power(np.abs(x1-x2), self.beta)
     
     def _pred(self, uid, bid):
@@ -371,8 +396,101 @@ class KorenIntegrated(BaseEstimator, RegressorMixin):
             else: aa = 0.
             bias_time=self.b_item_bt_[xi,0]+self.b_user_alpha_.loc[uid]*self._dev(aa,0.)+self.b_user_t_[user_index,0]
 
+        if self._use_lb:
+            if uid in self._review_map: avg_loc = self._user_average_loc.loc[uid]
+            else: avg_loc = [0, 0]
+            if bid in self._bus_data.index and not np.isnan(self._bus_data.loc[bid, 'lat']) and not np.isnan(self._bus_data.loc[bid, 'lng']):
+                lat = self._bus_data.loc[bid, 'lat']
+                lng = self._bus_data.loc[bid, 'lng']
+            else:
+                lat, lng = (self._lat_mean, self._lng_mean)
+
+            bias_loc=self.b_user_phi_.loc[uid]*self._dev(avg_loc,[lat, lng])
+            
         if self._use_c:
             c_yi = self._w_ij_index.reindex(N_items)[1]
             neighborhood_implicit = invroot_N_mag * self.c_[xi,c_yi].sum()
+
+        if np.isnan(general + latent + neighborhood + neighborhood_implicit + bias_time + p_time + neighborhood_time):
+            raise Exception
             
         return general + latent + neighborhood + neighborhood_implicit + bias_time + p_time + neighborhood_time
+
+if __name__ == '__main__':
+    (bus_data, review_data, user_data, checkin_data) = eda.get_train_data()
+    (bus_data_test, review_data_test, user_data_test, checkin_data_test) = eda.get_test_data()
+    (bus_data_final, review_data_final, user_data_final, checkin_data_final) = eda.get_final_data()
+
+    review_data['age'] = review_data['date'].map(lambda x: (datetime.datetime(2013, 1, 19) - x).days)
+
+    # ki = KorenIntegrated(n_iter=10, n_factors=100, model_type='integrated', gam3=0.002)
+    # ki.fit((pd.concat([bus_data, bus_data_test, bus_data_final]),
+    #         review_data,
+    #         pd.concat([review_data, review_data_test, review_data_final]),
+    #         pd.concat([user_data, user_data_test, user_data_final]),
+    #         pd.concat([checkin_data, checkin_data_test, checkin_data_final])))
+    # ki_pred = ki.predict(review_data_final)
+    # pd.DataFrame({'review_id' : ki_pred.index, 'stars' : np.maximum(0, np.minimum(5, ki_pred))}).to_csv('../integrated_submission_i10_f100.csv', index=False)
+
+    # ki = KorenIntegrated(n_iter=10, n_factors=100, model_type='svd++')
+    # ki.fit((pd.concat([bus_data, bus_data_test, bus_data_final]),
+    #         review_data,
+    #         pd.concat([review_data, review_data_test, review_data_final]),
+    #         pd.concat([user_data, user_data_test, user_data_final]),
+    #         pd.concat([checkin_data, checkin_data_test, checkin_data_final])))
+    # ki_pred = ki.predict(review_data_final)
+    # pd.DataFrame({'review_id' : ki_pred.index, 'stars' : np.maximum(0, np.minimum(5, ki_pred))}).to_csv('../svdpp_submission_i10_f100.csv', index=False)
+
+    # ki = KorenIntegrated(n_iter=10, n_factors=100, model_type='factor')
+    # ki.fit((pd.concat([bus_data, bus_data_test, bus_data_final]),
+    #         review_data,
+    #         pd.concat([review_data, review_data_test, review_data_final]),
+    #         pd.concat([user_data, user_data_test, user_data_final]),
+    #         pd.concat([checkin_data, checkin_data_test, checkin_data_final])))
+    # ki_pred = ki.predict(review_data_final)
+    # pd.DataFrame({'review_id' : ki_pred.index, 'stars' : np.maximum(0, np.minimum(5, ki_pred))}).to_csv('../factor_submission_i10_f100.csv', index=False)
+
+    # ki = KorenIntegrated(n_iter=10, n_factors=100, model_type='nsvd')
+    # ki.fit((pd.concat([bus_data, bus_data_test, bus_data_final]),
+    #         review_data,
+    #         pd.concat([review_data, review_data_test, review_data_final]),
+    #         pd.concat([user_data, user_data_test, user_data_final]),
+    #         pd.concat([checkin_data, checkin_data_test, checkin_data_final])))
+    # ki_pred = ki.predict(review_data_final)
+    # pd.DataFrame({'review_id' : ki_pred.index, 'stars' : np.maximum(0, np.minimum(5, ki_pred))}).to_csv('../nsvd_submission_i10_f100.csv', index=False)
+
+    # ki = KorenIntegrated(n_iter=10, n_factors=100, model_type='neighbors')
+    # ki.fit((pd.concat([bus_data, bus_data_test, bus_data_final]),
+    #         review_data,
+    #         pd.concat([review_data, review_data_test, review_data_final]),
+    #         pd.concat([user_data, user_data_test, user_data_final]),
+    #         pd.concat([checkin_data, checkin_data_test, checkin_data_final])))
+    # ki_pred = ki.predict(review_data_final)
+    # pd.DataFrame({'review_id' : ki_pred.index, 'stars' : np.maximum(0, np.minimum(5, ki_pred))}).to_csv('../neighbors_submission_i10.csv', index=False)
+
+    # ki = KorenIntegrated(n_iter=10, n_factors=100, model_type='timeneighbors')
+    # ki.fit((pd.concat([bus_data, bus_data_test, bus_data_final]),
+    #         review_data,
+    #         pd.concat([review_data, review_data_test, review_data_final]),
+    #         pd.concat([user_data, user_data_test, user_data_final]),
+    #         pd.concat([checkin_data, checkin_data_test, checkin_data_final])))
+    # ki_pred = ki.predict(review_data_final)
+    # pd.DataFrame({'review_id' : ki_pred.index, 'stars' : np.maximum(0, np.minimum(5, ki_pred))}).to_csv('../timeneighbors_submission_i10.csv', index=False)
+    
+    ki = KorenIntegrated(n_iter=10, n_factors=100, model_type='locneighbors')
+    ki.fit((pd.concat([bus_data, bus_data_test, bus_data_final]),
+            review_data,
+            pd.concat([review_data, review_data_test, review_data_final]),
+            pd.concat([user_data, user_data_test, user_data_final]),
+            pd.concat([checkin_data, checkin_data_test, checkin_data_final])))
+    ki_pred = ki.predict(review_data_final)
+    pd.DataFrame({'review_id' : ki_pred.index, 'stars' : np.maximum(0, np.minimum(5, ki_pred))}).to_csv('../locneighbors_submission_i10.csv', index=False)
+
+    ki = KorenIntegrated(n_iter=10, n_factors=100, model_type='locintegrated')
+    ki.fit((pd.concat([bus_data, bus_data_test, bus_data_final]),
+            review_data,
+            pd.concat([review_data, review_data_test, review_data_final]),
+            pd.concat([user_data, user_data_test, user_data_final]),
+            pd.concat([checkin_data, checkin_data_test, checkin_data_final])))
+    ki_pred = ki.predict(review_data_final)
+    pd.DataFrame({'review_id' : ki_pred.index, 'stars' : np.maximum(0, np.minimum(5, ki_pred))}).to_csv('../locintegrated_submission_i10.csv', index=False)
