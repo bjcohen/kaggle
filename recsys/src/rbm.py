@@ -286,5 +286,8 @@ if __name__ == '__main__':
           review_data,
           pd.concat([review_data, review_data_test, review_data_final]))
     r_pred = r.predict(review_data_final, method='exp')
-    pd.DataFrame({'review_id' : review_data_final.index, 'stars' : np.maximum(0, np.minimum(5, r_pred))}).to_csv('../rbm_submission_e50_h50.csv',index=False)
+    pd.DataFrame({'review_id' : review_data_final.index, 'stars' : np.maximum(1, np.minimum(5, r.predict(review_data_final, method='exp')))}) \
+      .to_csv('../rbm_submission_e50_h50.csv',index=False)
+    pd.DataFrame({'review_id' : review_data.index, 'stars' : np.maximum(1, np.minimum(5, r.predict(review_data, method='exp')))}) \
+      .to_csv('../rbm_fitted_e50_h50.csv',index=False)
 

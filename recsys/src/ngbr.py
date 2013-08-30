@@ -158,7 +158,7 @@ class KorenIntegrated(BaseEstimator, RegressorMixin):
         self.p_alpha_ = None
         self.w_beta_ = None
 
-    def fit(self, X, y=None):
+    def fit(self, X, valid_data=None):
         '''
         Fit model.
 
@@ -305,6 +305,9 @@ class KorenIntegrated(BaseEstimator, RegressorMixin):
 
             self.predicted_ = self.predict(review_data)
             print 'train MSE = %f' % (np.sqrt(np.mean(np.power(review_data.loc[:,'stars'] - self.predicted_, 2))))
+            if valid_data is not None:
+                self.valid_ = self.predict(valid_data)
+                print 'valid MSE = %f' % (np.sqrt(np.mean(np.power(valid_data.loc[:,'stars'] - self.valid_, 2))))
 
         t3 = time.clock()
         print 'finished training in %dm' % ((t3 - t2) / 60.)
@@ -477,20 +480,65 @@ if __name__ == '__main__':
     # ki_pred = ki.predict(review_data_final)
     # pd.DataFrame({'review_id' : ki_pred.index, 'stars' : np.maximum(0, np.minimum(5, ki_pred))}).to_csv('../timeneighbors_submission_i10.csv', index=False)
     
-    ki = KorenIntegrated(n_iter=10, n_factors=100, model_type='locneighbors')
-    ki.fit((pd.concat([bus_data, bus_data_test, bus_data_final]),
-            review_data,
-            pd.concat([review_data, review_data_test, review_data_final]),
-            pd.concat([user_data, user_data_test, user_data_final]),
-            pd.concat([checkin_data, checkin_data_test, checkin_data_final])))
-    ki_pred = ki.predict(review_data_final)
-    pd.DataFrame({'review_id' : ki_pred.index, 'stars' : np.maximum(0, np.minimum(5, ki_pred))}).to_csv('../locneighbors_submission_i10.csv', index=False)
+    # ki = KorenIntegrated(n_iter=10, n_factors=100, model_type='locneighbors')
+    # ki.fit((pd.concat([bus_data, bus_data_test, bus_data_final]),
+    #         review_data,
+    #         pd.concat([review_data, review_data_test, review_data_final]),
+    #         pd.concat([user_data, user_data_test, user_data_final]),
+    #         pd.concat([checkin_data, checkin_data_test, checkin_data_final])))
+    # ki_pred = ki.predict(review_data_final)
+    # pd.DataFrame({'review_id' : ki_pred.index, 'stars' : np.maximum(0, np.minimum(5, ki_pred))}).to_csv('../locneighbors_submission_i10.csv', index=False)
 
-    ki = KorenIntegrated(n_iter=10, n_factors=100, model_type='locintegrated')
+    # ki = KorenIntegrated(n_iter=10, n_factors=100, model_type='locintegrated')
+    # ki.fit((pd.concat([bus_data, bus_data_test, bus_data_final]),
+    #         review_data,
+    #         pd.concat([review_data, review_data_test, review_data_final]),
+    #         pd.concat([user_data, user_data_test, user_data_final]),
+    #         pd.concat([checkin_data, checkin_data_test, checkin_data_final])))
+    # ki_pred = ki.predict(review_data_final)
+    # pd.DataFrame({'review_id' : ki_pred.index, 'stars' : np.maximum(0, np.minimum(5, ki_pred))}).to_csv('../locintegrated_submission_i10.csv', index=False)
+
+    ki = KorenIntegrated(n_iter=30, n_factors=150, model_type='integrated', gam3=0.002)
     ki.fit((pd.concat([bus_data, bus_data_test, bus_data_final]),
-            review_data,
+            review_data[:180000],
             pd.concat([review_data, review_data_test, review_data_final]),
             pd.concat([user_data, user_data_test, user_data_final]),
-            pd.concat([checkin_data, checkin_data_test, checkin_data_final])))
+            pd.concat([checkin_data, checkin_data_test, checkin_data_final])),
+        review_data.iloc[180000:])
     ki_pred = ki.predict(review_data_final)
-    pd.DataFrame({'review_id' : ki_pred.index, 'stars' : np.maximum(0, np.minimum(5, ki_pred))}).to_csv('../locintegrated_submission_i10.csv', index=False)
+    pd.DataFrame({'review_id' : ki_pred.index, 'stars' : np.maximum(0, np.minimum(5, ki_pred))}).to_csv('../integrated_submission_i30_f150.csv', index=False)
+    pd.DataFrame({'review_id' : ki.predicted_.index, 'stars' : np.maximum(0, np.minimum(5, ki.predicted_))}).to_csv('../integrated_fitted_i30_f150.csv', index=False)
+
+    ki = KorenIntegrated(n_iter=30, n_factors=100, model_type='integrated', gam3=0.002)
+    ki.fit((pd.concat([bus_data, bus_data_test, bus_data_final]),
+            review_data[:180000],
+            pd.concat([review_data, review_data_test, review_data_final]),
+            pd.concat([user_data, user_data_test, user_data_final]),
+            pd.concat([checkin_data, checkin_data_test, checkin_data_final])),
+        review_data.iloc[180000:])
+    ki_pred = ki.predict(review_data_final)
+    pd.DataFrame({'review_id' : ki_pred.index, 'stars' : np.maximum(0, np.minimum(5, ki_pred))}).to_csv('../integrated_submission_i30_f100.csv', index=False)
+    pd.DataFrame({'review_id' : ki.predicted_.index, 'stars' : np.maximum(0, np.minimum(5, ki.predicted_))}).to_csv('../integrated_fitted_i30_f100.csv', index=False)
+        
+    ki = KorenIntegrated(n_iter=75, n_factors=150, model_type='nsvd')
+    ki.fit((pd.concat([bus_data, bus_data_test, bus_data_final]),
+            review_data[:180000],
+            pd.concat([review_data, review_data_test, review_data_final]),
+            pd.concat([user_data, user_data_test, user_data_final]),
+            pd.concat([checkin_data, checkin_data_test, checkin_data_final])),
+        review_data.iloc[180000:])
+    ki_pred = ki.predict(review_data_final)
+    pd.DataFrame({'review_id' : ki_pred.index, 'stars' : np.maximum(0, np.minimum(5, ki_pred))}).to_csv('../nsvd_submission_i75_f150.csv', index=False)
+    pd.DataFrame({'review_id' : ki.predicted_.index, 'stars' : np.maximum(0, np.minimum(5, ki.predicted_))}).to_csv('../nsvd_fitted_i75_f150.csv', index=False)
+    
+    ki = KorenIntegrated(n_iter=75, n_factors=100, model_type='nsvd')
+    ki.fit((pd.concat([bus_data, bus_data_test, bus_data_final]),
+            review_data[:180000],
+            pd.concat([review_data, review_data_test, review_data_final]),
+            pd.concat([user_data, user_data_test, user_data_final]),
+            pd.concat([checkin_data, checkin_data_test, checkin_data_final])),
+        review_data.iloc[180000:])
+    ki_pred = ki.predict(review_data_final)
+    pd.DataFrame({'review_id' : ki_pred.index, 'stars' : np.maximum(0, np.minimum(5, ki_pred))}).to_csv('../nsvd_submission_i75_f100.csv', index=False)
+    pd.DataFrame({'review_id' : ki.predicted_.index, 'stars' : np.maximum(0, np.minimum(5, ki.predicted_))}).to_csv('../nsvd_fitted_i75_f100.csv', index=False)
+    
