@@ -1,0 +1,37 @@
+* Notes
+** RF Importance:
+   user review ct, age of review, business stars, user average stars
+* Ideas
+** Poisson Regression
+** Beta, Gamma
+** votes_useful ~ exp, poisson, half-normal, pareto?
+** ddst in python
+* To Try
+** Gradient Boosted Trees
+** SGD
+** Gaussian Processes
+** More Text Features
+** # of reviews per user feature
+** # of reviews per business feature
+** log/normalize features
+** classify as 0 votes
+** pca transform features (RandomizedPCA with whiten=True) / SelectKBest
+** feature selection
+** Clustering, n-gram, tfidf, cosine similarity
+** Dates! train: 2013-01-19, test: 2013-03-12
+** K-NN / SGD on tfidf matrix
+** tm
+** filter numbers / punc / stem
+** http://radimrehurek.com/gensim/simserver.html
+** http://nltk.org/api/nltk.cluster.html#module-nltk.cluster.kmeans
+** http://www.cs.cmu.edu/~maheshj/pubs/joshi+das+gimpel+smith.naacl2010.pdf
+** http://public.kenan-flagler.unc.edu/faculty/sagij/N09-1031%5B1%5D.pdf
+** http://www.cs.cmu.edu/~nasmith/papers/nguyen+smith+rose.latech11.pdf
+** https://www.cs.princeton.edu/~blei/papers/BleiMcAuliffe2007.pdf
+** content: n-gram, word classes
+** stylistic: pos n-gram, dependency, slang, average sentence length, LIWC
+** pareto/zipf/zeta
+** hurdle model / two-part (mhurdle)
+** poisson regression
+** http://www.econ.ucdavis.edu/faculty/cameron/research/cte01preprint.pdf
+** http://ftp.cs.ucla.edu/pub/stat_ser/r350.pdf
